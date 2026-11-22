@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "example_verified_event_001",
+  "consumerId": "trusted_site_fulfillment",
+  "outcome": "durably_handled"
+}

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "id": "example_variable_payment",
+  "revision": "1",
+  "state": "published",
+  "name": "Example variable payment",
+  "purpose": "Pay for an example service",
+  "fields": [
+    {
+      "id": "payer_email",
+      "type": "email",
+      "label": "Email address",
+      "required": true,
+      "maxLength": 254
+    },
+    {
+      "id": "message",
+      "type": "textarea",
+      "label": "Message",
+      "required": false,
+      "maxLength": 500
+    }
+  ],
+  "pricing": {
+    "mode": "payer_entered",
+    "currency": "NGN",
+    "minimum": "1000.00",
+    "maximum": "100000.00",
+    "fractionDigits": 2
+  },
+  "metadataPolicy": {
+    "allowedKeys": [
+      "site.service"
+    ],
+    "maxBytes": 4096
+  }
+}

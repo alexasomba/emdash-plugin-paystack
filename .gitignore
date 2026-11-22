@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env
+.env.*
+test-results/
+playwright-report/

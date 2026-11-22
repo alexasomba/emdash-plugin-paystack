@@ -1,0 +1,1262 @@
+diff --git a/packages/core/src/admin/pages/OrderDetailPage.tsx b/packages/core/src/admin/pages/OrderDetailPage.tsx
+index 61dd7a3..252062e 100644
+--- a/packages/core/src/admin/pages/OrderDetailPage.tsx
++++ b/packages/core/src/admin/pages/OrderDetailPage.tsx
+@@ -73,6 +73,7 @@ interface OrderDetail {
+ 	order: Order;
+ 	items: OrderItem[];
+ 	refunds: Refund[];
++	recoveryRevision?: string;
+ }
+ 
+ export function OrderDetailPage() {
+@@ -128,6 +129,7 @@ export function OrderDetailPage() {
+ 		<div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+ 			<BackToOrdersLink />
+ 			<OrderHeader order={order} onChanged={reload} />
++			<RecoveryCard order={order} revision={data.recoveryRevision} onChanged={reload} />
+ 			<ItemsCard items={items} />
+ 			<RefundCard order={order} items={items} onRefunded={reload} />
+ 			<RefundHistoryCard refunds={refunds} />
+@@ -135,6 +137,39 @@ export function OrderDetailPage() {
+ 	);
+ }
+ 
++function RecoveryCard({ order, revision, onChanged }: { order: Order; revision?: string; onChanged: () => Promise<void> }) {
++	const api = usePluginAPI();
++	const [reason, setReason] = useState("");
++	const [confirmed, setConfirmed] = useState(false);
++	const [pending, setPending] = useState(false);
++	const state = order.metadata?.recoveryState;
++	if (typeof state !== "string" || state === "complete" || state === "operator_reconciled") return null;
++	const canReview = state === "items_repaired_inventory_review_required" && !!revision;
++	async function submit(event: React.FormEvent<HTMLFormElement>) {
++		event.preventDefault();
++		if (!canReview || !confirmed || reason.trim().length < 12 || !revision) return;
++		setPending(true);
++		try {
++			await api.post(`admin/orders/recovery?id=${encodeURIComponent(order.id)}`, { expectedRevision: revision, confirmed: true, reason: reason.trim() });
++			toast.success("Recovery review recorded", "The order remains on hold until you change its status.");
++			await onChanged();
++		} catch (error) {
++			toast.error("Could not record recovery review", error instanceof Error ? error.message : String(error));
++		} finally { setPending(false); }
++	}
++	return <Card title="Order recovery">
++		<Alert type="warning" title="This order needs review">
++			Check the payment, all order items, inventory, and any fulfillment or notifications before recording that recovery is complete. The order stays on hold.
++		</Alert>
++		{canReview ? <form onSubmit={submit} aria-label="Record order recovery review">
++			<label htmlFor="recovery-reason">What did you reconcile?</label>
++			<Input id="recovery-reason" name="reason" value={reason} onChange={(e) => setReason(e.currentTarget.value)} required minLength={12} maxLength={500} disabled={pending} />
++			<label><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.currentTarget.checked)} required disabled={pending} /> I checked and reconciled the payment, inventory, and fulfillment.</label>
++			<Button type="submit" disabled={pending || !confirmed || reason.trim().length < 12}>Record review</Button>
++		</form> : <p>Recovery cannot be confirmed in its current state. Investigate the interrupted operation first.</p>}
++	</Card>;
++}
++
+ function BackToOrdersLink() {
+ 	return (
+ 		<div>
+@@ -169,7 +204,9 @@ function OrderHeader({
+ 	const api = usePluginAPI();
+ 	const [pending, setPending] = useState<OrderStatus | null>(null);
+ 
+-	const targets = ALLOWED_TRANSITIONS[order.status] ?? [];
++	const recovery = order.metadata?.recoveryState;
++	const blocked = typeof recovery === "string" && recovery !== "complete" && recovery !== "operator_reconciled";
++	const targets = blocked ? [] : (ALLOWED_TRANSITIONS[order.status] ?? []);
+ 
+ 	async function transition(next: OrderStatus): Promise<void> {
+ 		if (DESTRUCTIVE_STATUSES.has(next)) {
+diff --git a/packages/core/src/astro/components/HostedCheckoutForm.astro b/packages/core/src/astro/components/HostedCheckoutForm.astro
+index d9fb0a5..2b466f9 100644
+--- a/packages/core/src/astro/components/HostedCheckoutForm.astro
++++ b/packages/core/src/astro/components/HostedCheckoutForm.astro
+@@ -72,6 +72,20 @@ const { digitalOnly = false } = Astro.props;
+       You'll be redirected to Stripe to enter your email, {digitalOnly ? "billing address, " : "full address, "}
+       and card details. We never see your card.
+     </p>
++    <form id="hc-contact-form" class="hc-form" hidden>
++      <label class="hc-label"><span>Email</span><input id="hc-email" type="email" required autocomplete="email" /></label>
++      <div class="hc-row-2">
++        <label class="hc-label"><span>First name</span><input id="hc-first" required autocomplete="given-name" /></label>
++        <label class="hc-label"><span>Last name</span><input id="hc-last" required autocomplete="family-name" /></label>
++      </div>
++      <label class="hc-label"><span>Address</span><input id="hc-line1" required autocomplete="address-line1" /></label>
++      <label class="hc-label"><span>City</span><input id="hc-city" required autocomplete="address-level2" /></label>
++      <label class="hc-label"><span>State or region</span><input id="hc-region" autocomplete="address-level1" /></label>
++      <div class="hc-row-2" id="hc-billing-location" hidden>
++        <label class="hc-label"><span>Country (ISO-2)</span><input id="hc-billing-country" required maxlength="2" value="NG" autocomplete="billing country" /></label>
++        <label class="hc-label"><span>Postal code</span><input id="hc-billing-postal" required autocomplete="billing postal-code" /></label>
++      </div>
++    </form>
+     <p id="hc-pay-error" class="hc-error" role="alert"></p>
+     <button id="hc-pay-btn" type="button" class="btn-primary hc-submit" disabled={!digitalOnly}>
+       <span class="hc-lock" aria-hidden="true">🔒</span>
+@@ -112,6 +126,7 @@ const { digitalOnly = false } = Astro.props;
+ 
+   .hc-form { display: grid; gap: 1rem; max-width: 30rem; }
+   .hc-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: .875rem; }
++  .hc-form[hidden], .hc-row-2[hidden] { display: none; }
+   .hc-label {
+     display: flex; flex-direction: column; gap: .4rem;
+     font-size: .82rem; font-weight: 500; color: var(--text-muted);
+@@ -201,6 +216,26 @@ const { digitalOnly = false } = Astro.props;
+   const payStepHint = payStep?.querySelector<HTMLElement>(".hc-step-hint");
+ 
+   let digitalOnly = hcRoot?.dataset.digitalOnly === "1";
++  let paymentProvider: string | null = null;
++  const contactForm = document.getElementById("hc-contact-form") as HTMLFormElement | null;
++  const billingLocation = document.getElementById("hc-billing-location");
++
++  async function loadPaymentProvider() {
++    try {
++      const response = await fetch(`${API}/checkout/mode`, { credentials: "include" });
++      if (!response.ok) throw new Error("Could not load payment settings");
++      const value = await response.json() as { provider?: string };
++      if (!value.provider) throw new Error("Payment provider unavailable");
++      paymentProvider = value.provider;
++      if (paymentProvider === "paystack") {
++        if (contactForm) contactForm.hidden = false;
++        if (billingLocation) billingLocation.hidden = !digitalOnly;
++        if (payStepHint) payStepHint.textContent = "Enter your contact details, then continue to Paystack to pay securely.";
++        if (payBtn) payBtn.textContent = "Continue to Paystack →";
++      }
++    } catch { setError(payErr, "Payment settings are unavailable. Please try again."); }
++  }
++  void loadPaymentProvider();
+ 
+   function setError(el: HTMLElement | null, msg: string | null) {
+     if (el) el.textContent = msg ?? "";
+@@ -214,12 +249,13 @@ const { digitalOnly = false } = Astro.props;
+    */
+   function applyDigitalOnlyLayout() {
+     digitalOnly = true;
++    if (billingLocation && paymentProvider === "paystack") billingLocation.hidden = false;
+     hcRoot?.setAttribute("data-digital-only", "1");
+     if (locStep) locStep.hidden = true;
+     if (methStep) methStep.hidden = true;
+     if (payStep) payStep.dataset.ready = "1";
+     if (payStepNum) payStepNum.textContent = "1";
+-    if (payStepHint) {
++    if (payStepHint && paymentProvider !== "paystack") {
+       payStepHint.textContent =
+         "You'll be redirected to Stripe to enter your email, billing address, and card details. We never see your card.";
+     }
+@@ -360,8 +396,27 @@ const { digitalOnly = false } = Astro.props;
+   // --- 3. Pay with Stripe ----------------------------------------------------
+   payBtn?.addEventListener("click", async () => {
+     setError(payErr, null);
++    if (!paymentProvider) { setError(payErr, "Payment settings are unavailable. Reload the page and try again."); return; }
++    if (paymentProvider === "paystack" && contactForm) {
++      const billingCountry = document.getElementById("hc-billing-country") as HTMLInputElement;
++      const billingPostal = document.getElementById("hc-billing-postal") as HTMLInputElement;
++      billingCountry.required = digitalOnly;
++      billingPostal.required = digitalOnly;
++      if (!contactForm.reportValidity()) return;
++      payBtn.disabled = true;
++      const get = (id: string) => (document.getElementById(id) as HTMLInputElement).value.trim();
++      const address = { firstName: get("hc-first"), lastName: get("hc-last"), line1: get("hc-line1"), city: get("hc-city"),
++        region: get("hc-region"), country: get(digitalOnly ? "hc-billing-country" : "hc-country").toUpperCase(),
++        postalCode: get(digitalOnly ? "hc-billing-postal" : "hc-postal") };
++      try {
++        const saved = await fetch(`${API}/cart/contact`, { method: "POST", credentials: "include",
++          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: get("hc-email"), billingAddress: address,
++            ...(!digitalOnly ? { shippingAddress: address } : {}) }) });
++        if (!saved.ok) throw new Error("Could not save contact details. Please try again.");
++      } catch { setError(payErr, "Could not save contact details. Please try again."); payBtn.disabled = false; return; }
++    }
+     payBtn.disabled = true;
+-    payBtn.textContent = "Redirecting to Stripe…";
++    payBtn.textContent = "Preparing payment…";
+     try {
+       const res = await fetch(`${API}/checkout/create-session`, {
+         method: "POST",
+@@ -373,13 +428,14 @@ const { digitalOnly = false } = Astro.props;
+         const b = await res.json().catch(() => ({}));
+         throw new Error((b as { error?: string }).error ?? `Payment setup failed (${res.status})`);
+       }
+-      const body = (await res.json()) as { url?: string; orderDraftId?: string };
++      const body = (await res.json()) as { url?: string; orderDraftId?: string; pending?: boolean };
++      if (body.pending) throw new Error("Your payment is still being prepared. Please try again shortly; do not start a new checkout.");
+       if (!body.url) throw new Error("Stripe did not return a checkout URL");
+       window.location.href = body.url;
+     } catch (err) {
+       setError(payErr, err instanceof Error ? err.message : "Could not start checkout.");
+       payBtn.disabled = false;
+-      payBtn.innerHTML = '<span class="hc-lock" aria-hidden="true">🔒</span>Pay with Stripe →';
++      payBtn.textContent = paymentProvider === "paystack" ? "Continue to Paystack →" : "Pay with Stripe →";
+     }
+   });
+ </script>
+diff --git a/packages/core/src/cart/lock.ts b/packages/core/src/cart/lock.ts
+index d0efc5b..6fe66dd 100644
+--- a/packages/core/src/cart/lock.ts
++++ b/packages/core/src/cart/lock.ts
+@@ -77,10 +77,12 @@ export async function sumActiveLocksForProduct(
+ 	ctx: PluginContext,
+ 	productId: string,
+ 	variantId?: string,
++	excludeDraftId?: string,
+ ): Promise<number> {
+ 	const locks = await listActiveLocks(ctx);
+ 	let total = 0;
+ 	for (const lock of locks) {
++		if (lock.orderDraftId === excludeDraftId) continue;
+ 		for (const entry of lock.entries) {
+ 			if (entry.productId !== productId) continue;
+ 			if (variantId !== undefined && entry.variantId !== variantId) continue;
+diff --git a/packages/core/src/orders/create.ts b/packages/core/src/orders/create.ts
+index 42ae726..c716a88 100644
+--- a/packages/core/src/orders/create.ts
++++ b/packages/core/src/orders/create.ts
+@@ -266,6 +266,53 @@ export interface CreateOrderInput {
+ 	orderDraftId: string;
+ }
+ 
++/** A single-order CAS fences concurrent workers; abandoned work stays on hold. */
++async function transitionRecoveryState(ctx: PluginContext, id: string, expected: string, next: string, status?: Order["status"]): Promise<Order> {
++	const store = ordersStore(ctx);
++	const row = await store.getVersioned(id);
++	if (!row || row.value.metadata?.recoveryState !== expected) throw new Error("Order recovery is already in progress");
++	const updated = { ...row.value, ...(status ? { status } : {}), metadata: { ...row.value.metadata, recoveryState: next } };
++	const written = await store.compareAndSet(id, row.revision, updated);
++	if (!written.applied) throw new Error("Order recovery is already in progress");
++	return updated;
++}
++
++/** Re-create only missing item rows. Never replay uncertain stock or delivery effects. */
++async function repairPendingOrderItems(ctx: PluginContext, order: Order, cart: CartState): Promise<void> {
++	await transitionRecoveryState(ctx, order.id, "items_pending", "items_writing");
++	const store = orderItemsStore(ctx);
++	const existing = await store.query({ where: { orderId: order.id }, limit: 200 });
++	if (existing.hasMore || cart.items.length > 200) throw new Error("Order item recovery exceeds safe limit");
++	const matches = new Set<number>();
++	for (const row of existing.items) {
++		const item = orderItemFromStorage(row.id, row.data as OrderItem);
++		const candidates = cart.items.map((line, index) => ({ line, index })).filter(({line,index}) =>
++			!matches.has(index) && item.productId === line.productId && item.variantId === line.variantId &&
++			item.quantity === line.quantity && item.name === line.title &&
++			item.unitPrice.amount === line.unitPrice.amount && item.unitPrice.currency === line.unitPrice.currency);
++		if (candidates.length !== 1) throw new Error("Order item recovery requires manual review");
++		matches.add(candidates[0]!.index);
++	}
++	const missing = cart.items.flatMap((line, index) => matches.has(index) ? [] : [{
++		id: `${order.id}_recovery_${index}`,
++		data: orderItemToStorage({ id: `${order.id}_recovery_${index}`, orderId: order.id,
++			productId: line.productId, ...(line.variantId ? { variantId: line.variantId } : {}),
++			sku: "", name: line.title, quantity: line.quantity, unitPrice: line.unitPrice,
++			lineSubtotal: line.lineSubtotal, discountAmount: zero(cart.currency), taxAmount: zero(cart.currency),
++			total: line.lineSubtotal, isDigital: line.isDigital,
++			...(line.vendorId ? { vendorId: line.vendorId } : {}),
++			...(line.subscriptionConfig ? { subscriptionConfig: line.subscriptionConfig } : {}),
++		} as OrderItem) as unknown as OrderItem,
++	}]);
++	try {
++		if (missing.length) await store.putMany(missing);
++	} catch (error) {
++		await transitionRecoveryState(ctx, order.id, "items_writing", "items_pending");
++		throw error;
++	}
++	await transitionRecoveryState(ctx, order.id, "items_writing", "items_repaired_inventory_review_required");
++}
++
+ export async function createOrderFromPaymentIntent(
+ 	ctx: PluginContext,
+ 	input: CreateOrderInput,
+@@ -275,6 +322,21 @@ export async function createOrderFromPaymentIntent(
+ 	// (1) Idempotency check.
+ 	const existing = await findOrderByPaymentIntent(ctx, pi.id);
+ 	if (existing) {
++		if (existing.metadata?.recoveryState === "items_pending") {
++			if (existing.metadata.orderDraftId !== orderDraftId || existing.total.amount !== cart.total.amount ||
++				existing.currency !== cart.currency || pi.status !== "succeeded" ||
++				!reconcilePaymentAmount(cart.total.amount, pi.amount_received, cart.currency, pi.currency).ok) {
++				throw new Error("Partial order recovery requires manual review");
++			}
++			await repairPendingOrderItems(ctx, existing, cart);
++			throw new Error("Order items recovered; inventory requires manual review");
++		}
++		if (existing.metadata?.recoveryState === "items_writing" || existing.metadata?.recoveryState === "effects_started") {
++			throw new Error("Order effects require manual review");
++		}
++		if (existing.metadata?.recoveryState === "items_repaired_inventory_review_required") {
++			throw new Error("Order inventory requires manual review");
++		}
+ 		ctx.log.info("Order already exists for PaymentIntent; returning existing", {
+ 			orderId: existing.id,
+ 			paymentIntentId: pi.id,
+@@ -315,6 +377,16 @@ export async function createOrderFromPaymentIntent(
+ 		throw new Error("Cart snapshot is missing a valid customer email.");
+ 	}
+ 
++	// Different verified event IDs can refer to the same charge. Claim the charge
++	// before customer updates, not just before writing the order. An uncertain
++	// claim stays held; replaying effects after a crash would risk double counts.
++	if (pi.metadata?.providerId && pi.metadata.providerId !== "stripe") {
++		const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${pi.metadata.providerId}\n${pi.id}`)));
++		const key = `order-payment-claim:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
++		const claimed = await ctx.kv.compareAndSet(key, null, { version: 1, orderDraftId });
++		if (!claimed.applied) throw new Error("Payment order creation requires recovery");
++	}
++
+ 	// (2) Upsert customer.
+ 	const customer = await upsertCustomer(ctx, {
+ 		email: customerEmail.toLowerCase(),
+@@ -332,9 +404,9 @@ export async function createOrderFromPaymentIntent(
+ 	// (4) Build Order + OrderItems.
+ 	const orderId = randomId();
+ 	const now = new Date().toISOString();
+-	const items: OrderItem[] = cart.items.map((line) => {
++	const items: OrderItem[] = cart.items.map((line, index) => {
+ 		const lineItem: OrderItem = {
+-			id: randomId(),
++			id: `${orderId}_recovery_${index}`,
+ 			orderId,
+ 			productId: line.productId,
+ 			...(line.variantId ? { variantId: line.variantId } : {}),
+@@ -386,6 +458,9 @@ export async function createOrderFromPaymentIntent(
+ 		...(cart.notes ? { customerNote: cart.notes } : {}),
+ 		metadata: {
+ 			orderDraftId,
++			...(pi.metadata?.providerId && pi.metadata.providerId !== "stripe" ? { checkoutReservationVersion: 1 } : {}),
++			recoveryState: "items_writing",
++			recoveryItemCount: cart.items.length,
+ 			...(integrityHold
+ 				? {
+ 						paymentAmountMismatch: !reconcile.amountOk,
+@@ -402,18 +477,22 @@ export async function createOrderFromPaymentIntent(
+ 		paidAt: now,
+ 	};
+ 
+-	const persistedOrder = await putOrderWithUniqueNumber(ctx, order);
++	const targetStatus = order.status;
++	const persistedOrder = await putOrderWithUniqueNumber(ctx, { ...order, status: "on-hold" });
+ 	// Reassign the local view if retry picked a new orderNumber, so
+ 	// downstream code (stock, coupon usage, lock release, email) sees
+ 	// the number that actually landed on disk.
+ 	Object.assign(order, persistedOrder);
+-	await orderItemsStore(ctx).putMany(
+-		items.map((it) => ({
+-			id: it.id,
+-			// Cast: storage row intentionally omits uniquely-indexed `sku`.
+-			data: orderItemToStorage(it) as unknown as OrderItem,
+-		})),
+-	);
++	try {
++		await orderItemsStore(ctx).putMany(
++			items.map((it) => ({ id: it.id, data: orderItemToStorage(it) as unknown as OrderItem })),
++		);
++	} catch (error) {
++		await transitionRecoveryState(ctx, order.id, "items_writing", "items_pending");
++		throw error;
++	}
++	await transitionRecoveryState(ctx, order.id, "items_writing", "effects_started");
++	let inventoryFailed = false;
+ 
+ 	// (5) Decrement stock + write ledger per line.
+ 	// Errors here are LOUD — the order is persisted but stock invariants
+@@ -425,6 +504,7 @@ export async function createOrderFromPaymentIntent(
+ 		try {
+ 			await decrementForOrderItem(ctx, item);
+ 		} catch (err) {
++			inventoryFailed = true;
+ 			const isOversold =
+ 				err !== null &&
+ 				typeof err === "object" &&
+@@ -447,6 +527,8 @@ export async function createOrderFromPaymentIntent(
+ 		}
+ 	}
+ 
++	if (inventoryFailed) throw new Error("Order inventory requires manual review");
++
+ 	// (6) Coupon usage.
+ 	try {
+ 		await incrementCouponUsage(ctx, cart, order.id, customer.id);
+@@ -455,6 +537,7 @@ export async function createOrderFromPaymentIntent(
+ 			orderId: order.id,
+ 			error: err instanceof Error ? err.message : String(err),
+ 		});
++		throw new Error("Order coupon usage requires review");
+ 	}
+ 
+ 	// (7) Release the soft-lock.
+@@ -465,6 +548,7 @@ export async function createOrderFromPaymentIntent(
+ 			orderDraftId,
+ 			error: err instanceof Error ? err.message : String(err),
+ 		});
++		throw new Error("Order lock release requires review");
+ 	}
+ 
+ 	// (8) Digital download grants (no-op when no digital items present).
+@@ -484,6 +568,7 @@ export async function createOrderFromPaymentIntent(
+ 				orderId: order.id,
+ 				error: err instanceof Error ? err.message : String(err),
+ 			});
++			throw new Error("Order download grant requires review");
+ 		}
+ 	} else {
+ 		ctx.log.warn("Withholding download grants due to payment amount/currency mismatch", {
+@@ -500,7 +585,8 @@ export async function createOrderFromPaymentIntent(
+ 	// (9) Receipt email (swallows its own errors).
+ 	await sendOrderReceipt(ctx, order, items);
+ 
+-	return { order, duplicate: false };
++	const completed = await transitionRecoveryState(ctx, order.id, "effects_started", "complete", targetStatus);
++	return { order: completed, duplicate: false };
+ }
+ 
+ export async function loadOrder(ctx: PluginContext, orderId: string): Promise<Order | null> {
+diff --git a/packages/core/src/payment-provider/credentials.ts b/packages/core/src/payment-provider/credentials.ts
+index f5675b5..9b7b39c 100644
+--- a/packages/core/src/payment-provider/credentials.ts
++++ b/packages/core/src/payment-provider/credentials.ts
+@@ -7,6 +7,7 @@
+  */
+ 
+ import type { PaymentProviderCredentials } from "./types";
++import { getPaymentProvider } from "./registry";
+ 
+ export interface KvLike {
+ 	get<T>(key: string): Promise<T | null>;
+@@ -22,6 +23,8 @@ export async function loadPaymentProviderCredentials(
+ 		const webhookSecret = (await kv.get<string>("settings:stripeWebhookSecret")) ?? undefined;
+ 		return { secretKey, webhookSecret };
+ 	}
++	const provider = getPaymentProvider(providerId);
++	if (provider?.getCredentials) return provider.getCredentials();
+ 	const secretKey = await kv.get<string>(`settings:${providerId}SecretKey`);
+ 	if (!secretKey) return null;
+ 	const webhookSecret = (await kv.get<string>(`settings:${providerId}WebhookSecret`)) ?? undefined;
+diff --git a/packages/core/src/payment-provider/types.ts b/packages/core/src/payment-provider/types.ts
+index 404a386..175dd9d 100644
+--- a/packages/core/src/payment-provider/types.ts
++++ b/packages/core/src/payment-provider/types.ts
+@@ -226,6 +226,8 @@ export interface PaymentStatusResult {
+ export interface PaymentProvider {
+ 	readonly id: string;
+ 	readonly label: string;
++	/** Trusted native adapters may resolve their own credentials without copying provider keys into Core. */
++	getCredentials?(): Promise<PaymentProviderCredentials | null>;
+ 	/**
+ 	 * Features this adapter actually implements. Missing/false means
+ 	 * hosted checkout must reject the cart rather than silently drop
+diff --git a/packages/core/src/routes/admin-api.ts b/packages/core/src/routes/admin-api.ts
+index 2945c14..eabeae7 100644
+--- a/packages/core/src/routes/admin-api.ts
++++ b/packages/core/src/routes/admin-api.ts
+@@ -223,7 +223,9 @@ async function getOrderDetail(
+ 	ctx: PluginContext,
+ 	orderId: string,
+ ): Promise<Response> {
+-	const order = await storeOf<Order>(ctx, "orders").get(orderId);
++	const store = storeOf<Order>(ctx, "orders");
++	const versioned = typeof store.getVersioned === "function" ? await store.getVersioned(orderId) : null;
++	const order = versioned?.value ?? await store.get(orderId);
+ 	if (!order) return json({ error: "Order not found" }, 404);
+ 	const items = (
+ 		await storeOf<OrderItem>(ctx, "order_items").query({
+@@ -237,7 +239,41 @@ async function getOrderDetail(
+ 			limit: 100,
+ 		})
+ 	).items.map((r) => ({ ...(r.data as Refund), id: r.id }));
+-	return json({ order: { ...order, id: orderId }, items, refunds });
++	return json({ order: { ...order, id: orderId }, items, refunds, ...(versioned ? { recoveryRevision: versioned.revision } : {}) });
++}
++
++/** Operator attests that the uncertain external effects were reconciled; order stays on hold. */
++async function postOrderRecovery(ctx: PluginContext, orderId: string, route: RouteContext): Promise<Response> {
++	if (route.request.method !== "POST") return json({ error: "Method not allowed" }, 405);
++	if (!route.user?.id) return json({ error: "Authenticated operator required" }, 403);
++	const value = route.input;
++	if (!value || typeof value !== "object" || Array.isArray(value)) return json({ error: "Invalid recovery confirmation" }, 400);
++	const body = value as Record<string, unknown>;
++	if (Object.keys(body).sort().join(",") !== "confirmed,expectedRevision,reason" || body.confirmed !== true ||
++		typeof body.expectedRevision !== "string" || !body.expectedRevision || body.expectedRevision.length > 4096 ||
++		typeof body.reason !== "string" || body.reason.trim().length < 12 || body.reason.length > 500 || /[\u0000-\u001f\u007f]/u.test(body.reason)) {
++		return json({ error: "Invalid recovery confirmation" }, 400);
++	}
++	const store = storeOf<Order>(ctx, "orders");
++	if (typeof store.getVersioned !== "function" || typeof store.compareAndSet !== "function") return json({ error: "Order versioning unavailable" }, 503);
++	const current = await store.getVersioned(orderId);
++	if (!current) return json({ error: "Order not found" }, 404);
++	const order = current.value;
++	if (current.revision !== body.expectedRevision || order.status !== "on-hold" || order.paymentStatus !== "paid" ||
++		order.metadata?.recoveryState !== "items_repaired_inventory_review_required") {
++		return json({ error: "Order changed or is not ready for recovery" }, 409);
++	}
++	const expected = order.metadata?.recoveryItemCount;
++	if (!Number.isSafeInteger(expected) || typeof expected !== "number" || expected < 1 || expected > 200) return json({ error: "Item count requires review" }, 409);
++	const items = await storeOf<OrderItem>(ctx, "order_items").query({ where: { orderId }, limit: 200 });
++	if (items.hasMore || items.items.length !== expected || items.items.some((row) => row.data.orderId !== orderId)) {
++		return json({ error: "Order items are incomplete" }, 409);
++	}
++	const updated: Order = { ...order, metadata: { ...order.metadata, recoveryState: "operator_reconciled",
++		recoveryReviewer: route.user.id, recoveryReviewedAt: new Date().toISOString(), recoveryReason: body.reason.trim() },
++		updatedAt: new Date().toISOString() };
++	if (!(await store.compareAndSet(orderId, current.revision, updated)).applied) return json({ error: "Order changed; refresh and retry" }, 409);
++	return json({ order: updated });
+ }
+ 
+ async function postOrderRefund(
+@@ -288,8 +324,17 @@ async function postOrderStatus(
+ ): Promise<Response> {
+ 	const body = (routeCtx.input ?? {}) as { status?: Order["status"] };
+ 	if (!body.status) return json({ error: "status required" }, 400);
+-	const order = await storeOf<Order>(ctx, "orders").get(orderId);
+-	if (!order) return json({ error: "Order not found" }, 404);
++	const store = storeOf<Order>(ctx, "orders");
++	if (typeof store.getVersioned !== "function" || typeof store.compareAndSet !== "function") {
++		return json({ error: "Order versioning unavailable" }, 503);
++	}
++	const record = await store.getVersioned(orderId);
++	if (!record) return json({ error: "Order not found" }, 404);
++	const order = record.value;
++	const recovery = order.metadata?.recoveryState;
++	if (typeof recovery === "string" && recovery !== "complete" && recovery !== "operator_reconciled") {
++		return json({ error: "Resolve the order recovery hold before changing status" }, 409);
++	}
+ 	try {
+ 		assertTransition(order.status, body.status);
+ 	} catch (err) {
+@@ -305,7 +350,8 @@ async function postOrderStatus(
+ 		...(body.status === "completed" ? { completedAt: new Date().toISOString() } : {}),
+ 		...(body.status === "cancelled" ? { cancelledAt: new Date().toISOString() } : {}),
+ 	};
+-	await storeOf<Order>(ctx, "orders").put(orderId, updated);
++	const write = await store.compareAndSet(orderId, record.revision, updated);
++	if (!write.applied) return json({ error: "Order changed; refresh and retry" }, 409);
+ 
+ 	// On fulfilment flip, queue a post-purchase review request. Best-effort
+ 	// and rate-limited inside `sendReviewRequest` via a KV marker, so a
+@@ -1624,6 +1670,13 @@ export const adminApiRoutes = {
+ 			return postOrderRefund(ctx, id, routeCtx);
+ 		},
+ 	},
++	"admin/orders/recovery": {
++		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
++			const id = queryOrPath(routeCtx.request, "id", "orders");
++			if (!id) return json({ error: "Missing order id" }, 400);
++			return postOrderRecovery(getCtx(routeCtx, _c), id, routeCtx);
++		},
++	},
+ 	"admin/orders/status": {
+ 		handler: async (routeCtx: RouteContext, _c?: PluginContext) => {
+ 			const ctx = getCtx(routeCtx, _c);
+diff --git a/packages/core/src/routes/checkout.ts b/packages/core/src/routes/checkout.ts
+index 100e080..4114402 100644
+--- a/packages/core/src/routes/checkout.ts
++++ b/packages/core/src/routes/checkout.ts
+@@ -18,6 +18,7 @@
+ import type { PluginContext, RouteContext } from "emdash";
+ import { type PricingPolicy, recalculate } from "../cart/calculate";
+ import { createLock, newLock, sumActiveLocksForProduct } from "../cart/lock";
++import { activeCheckoutDraft, reserveCheckout } from "../cart/checkout-reservation";
+ import { getCart, save } from "../cart/store";
+ import { refreshAppliedCoupons } from "../coupons/refresh";
+ import { money, zero } from "../money";
+@@ -81,7 +82,7 @@ interface RepriceResult {
+ 	stockEntries: StockLockEntry[];
+ }
+ 
+-async function repriceAndCheckStock(ctx: PluginContext, cart: CartState): Promise<RepriceResult> {
++async function repriceAndCheckStock(ctx: PluginContext, cart: CartState, excludeDraftId?: string): Promise<RepriceResult> {
+ 	const errors: RepriceError[] = [];
+ 	const out: CartLineItem[] = [];
+ 	const stockEntries: StockLockEntry[] = [];
+@@ -148,6 +149,7 @@ async function repriceAndCheckStock(ctx: PluginContext, cart: CartState): Promis
+ 				ctx,
+ 				line.productId,
+ 				line.variantId ?? undefined,
++				excludeDraftId,
+ 			);
+ 			const available = onHand - locked;
+ 			if (line.quantity > available && fields.backorders === "no") {
+@@ -499,7 +501,12 @@ export const checkoutRoutes = {
+ 				...(input.notes ? { notes: input.notes } : {}),
+ 			};
+ 
+-			const { items, errors, stockEntries } = await repriceAndCheckStock(ctx, withContact);
++			let priorDraft: string | null = null;
++			if (provider.id !== "stripe") {
++				try { priorDraft = await activeCheckoutDraft(ctx, sessionId); }
++				catch { return new Response(JSON.stringify({ error: "Checkout reservation unavailable" }), { status: 503 }); }
++			}
++			const { items, errors, stockEntries } = await repriceAndCheckStock(ctx, withContact, priorDraft ?? undefined);
+ 			if (errors.length > 0) {
+ 				return new Response(JSON.stringify({ error: "Cart validation failed", errors }), {
+ 					status: 409,
+@@ -536,21 +543,6 @@ export const checkoutRoutes = {
+ 			}
+ 			await save(ctx, recalculated);
+ 
+-			const orderDraftId = randomId();
+-
+-			if (stockEntries.length > 0) {
+-				await createLock(
+-					ctx,
+-					newLock(orderDraftId, sessionId, stockEntries, { ttlMs: LOCK_TTL_MS }),
+-				);
+-			}
+-
+-			await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
+-				cart: recalculated,
+-				ttlMs: DRAFT_TTL_MS,
+-				createdAt: new Date().toISOString(),
+-			});
+-
+ 			// Decide session mode. Stripe Checkout requires a session to
+ 			// be entirely one-off (`payment`) or entirely recurring
+ 			// (`subscription`) — a mixed cart needs the Invoice/Checkout
+@@ -608,6 +600,12 @@ export const checkoutRoutes = {
+ 			// "exclusive" (add tax on top), which is the common online
+ 			// store shape.
+ 			const stripeTaxEnabled = policy.taxMode === "stripe_tax";
++			if (stripeTaxEnabled && provider.id !== "stripe") {
++				return new Response(JSON.stringify({ error: "This payment provider requires flat or table tax settings" }), {
++					status: 409, headers: { "Content-Type": "application/json" },
++				});
++			}
++
+ 
+ 			// Build Checkout Session line items from the re-priced cart.
+ 			// Product lines use unit prices (pre-discount). Shipping is passed
+@@ -666,11 +664,6 @@ export const checkoutRoutes = {
+ 			// Production deployments must set SITE_URL environment variable.
+ 			const siteUrl = getPublicSiteUrl(ctx);
+ 
+-			// Pass `{CHECKOUT_SESSION_ID}` literally — Stripe substitutes
+-			// it server-side on redirect.
+-			const successUrl = `${siteUrl}/thank-you/${encodeURIComponent(orderDraftId)}?session_id={CHECKOUT_SESSION_ID}`;
+-			const cancelUrl = `${siteUrl}/checkout?canceled=1`;
+-
+ 			// Vendor split (Connect). Reuses the single-vendor path from
+ 			// create-intent. Multi-vendor carts are rejected the same way.
+ 			let transferData: { destination: string; amount?: number } | undefined;
+@@ -708,6 +701,28 @@ export const checkoutRoutes = {
+ 				}
+ 			}
+ 
++			let orderDraftId: string;
++			try { orderDraftId = provider.id === "stripe" ? randomId() : await reserveCheckout(ctx, recalculated, provider.id); }
++			catch { return new Response(JSON.stringify({ error: "A previous checkout is unresolved or unavailable" }), { status: 409 }); }
++
++			if (stockEntries.length > 0) {
++				await createLock(
++					ctx,
++					newLock(orderDraftId, sessionId, stockEntries, { ttlMs: LOCK_TTL_MS }),
++				);
++			}
++
++			await ctx.kv.set(`${DRAFT_PREFIX}${orderDraftId}`, {
++				cart: recalculated,
++				ttlMs: DRAFT_TTL_MS,
++				createdAt: new Date().toISOString(),
++			});
++
++			// Pass `{CHECKOUT_SESSION_ID}` literally — Stripe substitutes
++			// it server-side on redirect.
++			const successUrl = `${siteUrl}/thank-you/${encodeURIComponent(orderDraftId)}${provider.id === "stripe" ? "?session_id={CHECKOUT_SESSION_ID}" : ""}`;
++			const cancelUrl = `${siteUrl}/checkout?canceled=1`;
++
+ 			const metadata: Record<string, string> = {
+ 				orderDraftId,
+ 				sessionId,
+@@ -769,6 +784,12 @@ export const checkoutRoutes = {
+ 				customer: {
+ 					email: recalculated.customerEmail ?? "",
+ 				},
++				...(provider.id !== "stripe" && recalculated.billingAddress
++					? { billingAddress: recalculated.billingAddress }
++					: {}),
++				...(provider.id !== "stripe" && recalculated.shippingAddress
++					? { shippingAddress: recalculated.shippingAddress }
++					: {}),
+ 				lineItems: lineItems.map((li) => ({
+ 					name: li.name,
+ 					amount: li.amount,
+@@ -824,6 +845,11 @@ export const checkoutRoutes = {
+ 			};
+ 
+ 			const checkoutResult = await provider.initCheckout(ctx, initCheckout, creds);
++			if (checkoutResult.kind === "pending") {
++				return new Response(JSON.stringify({ pending: true, orderDraftId }), {
++					status: 202, headers: { "Content-Type": "application/json" },
++				});
++			}
+ 			if (checkoutResult.kind !== "redirect" || !checkoutResult.redirectUrl) {
+ 				return new Response(
+ 					JSON.stringify({
+@@ -869,7 +895,8 @@ export const checkoutRoutes = {
+ 			const ctx = (_ctx ?? (_routeCtx as unknown as PluginContext)) as PluginContext;
+ 			const mode =
+ 				(await ctx.kv.get<CheckoutMode>("settings:checkoutMode")) ?? DEFAULT_CHECKOUT_MODE;
+-			return new Response(JSON.stringify({ mode }), {
++			const provider = await resolveProvider(ctx.kv);
++			return new Response(JSON.stringify({ mode, provider: provider.id }), {
+ 				status: 200,
+ 				headers: { "Content-Type": "application/json" },
+ 			});
+diff --git a/packages/core/src/routes/webhook.ts b/packages/core/src/routes/webhook.ts
+index 87b6f36..17416c0 100644
+--- a/packages/core/src/routes/webhook.ts
++++ b/packages/core/src/routes/webhook.ts
+@@ -60,6 +60,7 @@ import { isUniqueViolation } from "../util/storage";
+ import { findVendorByStripeAccountId, upsertVendorFromStripeAccount } from "../vendors/onboarding";
+ import { recordPayoutFromStripe } from "../vendors/payouts";
+ import { type CheckoutDraftSnapshot, draftKey } from "./checkout";
++import { completeCheckoutReservation } from "../cart/checkout-reservation";
+ 
+ type StripeEventsStore = StorageCollection<StripeEventRecord>;
+ function stripeEventsStore(ctx: PluginContext): StripeEventsStore {
+@@ -621,7 +622,17 @@ async function handleNormalizedChargeSucceeded(
+ 	event: Extract<NormalizedPaymentEvent, { type: "charge.succeeded" }>,
+ ): Promise<Response> {
+ 	const existing = await findOrderByPaymentIntent(ctx, event.paymentReference);
+-	if (existing) {
++	if (existing && (!existing.metadata?.recoveryState || existing.metadata.recoveryState === "complete")) {
++		if (existing.providerId !== event.providerId || existing.paymentStatus !== "paid" ||
++			existing.metadata?.orderDraftId !== event.orderDraftId || existing.paidTotal.amount !== event.amount ||
++			existing.paidTotal.currency.toUpperCase() !== event.currency.toUpperCase()) {
++			return new Response(JSON.stringify({ error: "Existing order does not match payment" }), { status: 409 });
++		}
++		const previous = await ctx.kv.get<CheckoutDraftSnapshot>(draftKey(event.orderDraftId));
++		if (previous && existing.metadata?.checkoutReservationVersion === 1) {
++			await completeCheckoutReservation(ctx, previous.cart.sessionId, event.orderDraftId);
++			await ctx.kv.delete(draftKey(event.orderDraftId));
++		}
+ 		return new Response(JSON.stringify({ received: true, duplicate: true }), {
+ 			status: 200,
+ 			headers: { "Content-Type": "application/json" },
+@@ -709,6 +720,9 @@ async function handleNormalizedChargeSucceeded(
+ 		orderDraftId: event.orderDraftId,
+ 	});
+ 
++	if (order.metadata?.checkoutReservationVersion === 1) {
++		await completeCheckoutReservation(ctx, cart.sessionId, event.orderDraftId);
++	}
+ 	if (!duplicate) {
+ 		await ctx.kv.delete(draftKey(event.orderDraftId));
+ 		try {
+@@ -741,6 +755,69 @@ async function handleNormalizedChargeFailed(
+ 	});
+ }
+ 
++/** Non-Stripe claims never acknowledge a delivery whose side effects may be incomplete. */
++async function claimExternalEvent(ctx: PluginContext, providerId: string, eventId: string, type: string, payload: string) {
++	const store = stripeEventsStore(ctx);
++	const eventKey = `${providerId}:${eventId}`;
++	const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload)));
++	const payloadHash = [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
++	const id = randomId();
++	const record = { id, stripeEventId: eventKey, type, payloadHash, createdAt: new Date().toISOString(), processingState: "processing" };
++	try {
++		await store.put(id, record as StripeEventRecord);
++		return { kind: "claimed" as const, id, record };
++	} catch (error) {
++		if (!isUniqueViolation(error)) throw error;
++		const existing = await store.query({ where: { stripeEventId: eventKey }, limit: 2 });
++		if (existing.items.length !== 1) return { kind: "unresolved" as const };
++		const found = existing.items[0]!;
++		const row = found.data as StripeEventRecord & { processingState?: string; payloadHash?: string };
++		if (row.payloadHash !== payloadHash) return { kind: "conflict" as const };
++		if (row.processingState === "completed") return { kind: "completed" as const };
++		if (row.processingState !== "retryable") return { kind: "unresolved" as const };
++		const current = await store.getVersioned(found.id);
++		if (!current || (current.value as StripeEventRecord & { processingState?: string }).processingState !== "retryable") {
++			return { kind: "unresolved" as const };
++		}
++		const next = { ...current.value, processingState: "processing" };
++		if (!(await store.compareAndSet(found.id, current.revision, next as StripeEventRecord)).applied) {
++			return { kind: "unresolved" as const };
++		}
++		return { kind: "claimed" as const, id: found.id, record: next };
++	}
++}
++
++async function isSafePartialItemRetry(ctx: PluginContext, event: NormalizedPaymentEvent): Promise<boolean> {
++	if (event.type !== "charge.succeeded") return false;
++	try {
++		const order = await findOrderByPaymentIntent(ctx, event.paymentReference);
++		return Boolean(order && order.status === "on-hold" && order.metadata?.recoveryState === "items_pending" &&
++			order.metadata.orderDraftId === event.orderDraftId);
++	} catch { return false; }
++}
++
++/** Complete a reviewed event only when its signed identity still matches the paid order. */
++async function completeReviewedExternalEvent(ctx: PluginContext, providerId: string, event: NormalizedPaymentEvent): Promise<boolean> {
++	if (event.type !== "charge.succeeded" || event.providerId !== providerId) return false;
++	try {
++		const order = await findOrderByPaymentIntent(ctx, event.paymentReference);
++		if (!order || order.providerId !== providerId || order.paymentStatus !== "paid" ||
++			order.metadata?.recoveryState !== "operator_reconciled" || order.metadata.orderDraftId !== event.orderDraftId ||
++			order.paidTotal.amount !== event.amount || order.paidTotal.currency.toUpperCase() !== event.currency.toUpperCase()) return false;
++		if (order.metadata.checkoutReservationVersion === 1) {
++			const draft = await ctx.kv.get<CheckoutDraftSnapshot>(draftKey(event.orderDraftId));
++			if (!draft) return false;
++			await completeCheckoutReservation(ctx, draft.cart.sessionId, event.orderDraftId);
++		}
++		const store = stripeEventsStore(ctx);
++		const results = await store.query({ where: { stripeEventId: `${providerId}:${event.providerEventId}` }, limit: 2 });
++		if (results.items.length !== 1) return false;
++		const row = await store.getVersioned(results.items[0]!.id);
++		if (!row || (row.value as StripeEventRecord & { processingState?: string }).processingState !== "review_required") return false;
++		return (await store.compareAndSet(results.items[0]!.id, row.revision, { ...row.value, processingState: "completed" } as StripeEventRecord)).applied;
++	} catch { return false; }
++}
++
+ export const webhookRoutes = {
+ 	"checkout/webhook": {
+ 		public: true,
+@@ -829,7 +906,7 @@ export const webhookRoutes = {
+ 			// (stripePaymentIntentId, stripeRefundId, …) still protects
+ 			// against out-of-order deliveries for different events against
+ 			// the same resource. `providerEventId` is Stripe `event.id`.
+-			if (providerEventId) {
++			if (provider.id === "stripe" && providerEventId) {
+ 				const fresh = await recordStripeEvent(ctx, providerEventId, eventTypeForDedup);
+ 				if (!fresh) {
+ 					return new Response(JSON.stringify({ received: true, duplicate: true }), {
+@@ -840,32 +917,34 @@ export const webhookRoutes = {
+ 			}
+ 
+ 			if (provider.id !== "stripe") {
+-				try {
+-					if (normalized.type === "charge.succeeded") {
+-						return await handleNormalizedChargeSucceeded(ctx, normalized);
+-					}
+-					if (normalized.type === "charge.failed") {
+-						return await handleNormalizedChargeFailed(ctx, normalized);
++				if (!providerEventId) return new Response(JSON.stringify({ error: "Missing provider event ID" }), { status: 400 });
++				let claim: Awaited<ReturnType<typeof claimExternalEvent>>;
++				try { claim = await claimExternalEvent(ctx, provider.id, providerEventId, eventTypeForDedup, payload); }
++				catch { return new Response(JSON.stringify({ error: "Event claim unavailable" }), { status: 503 }); }
++				if (claim.kind === "conflict") return new Response(JSON.stringify({ error: "Event payload conflict" }), { status: 409 });
++				if (claim.kind === "completed") return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 });
++				if (claim.kind !== "claimed") {
++					if (await completeReviewedExternalEvent(ctx, provider.id, normalized)) {
++						return new Response(JSON.stringify({ received: true, reconciled: true }), { status: 200 });
+ 					}
+-					return new Response(
+-						JSON.stringify({
+-							received: true,
+-							type: normalized.providerEventType,
+-							skipped: true,
+-						}),
+-						{ status: 200, headers: { "Content-Type": "application/json" } },
+-					);
+-				} catch (err) {
+-					ctx.log.error("Webhook handler error", {
+-						providerId: provider.id,
+-						error: err instanceof Error ? err.message : String(err),
+-					});
+-					return new Response(
+-						JSON.stringify({
+-							error: err instanceof Error ? err.message : "Webhook handler failed",
+-						}),
+-						{ status: 500, headers: { "Content-Type": "application/json" } },
+-					);
++					return new Response(JSON.stringify({ error: "Event requires recovery" }), { status: 503 });
++				}
++				try {
++					const response = normalized.type === "charge.succeeded"
++						? await handleNormalizedChargeSucceeded(ctx, normalized)
++						: normalized.type === "charge.failed"
++							? await handleNormalizedChargeFailed(ctx, normalized)
++							: new Response(JSON.stringify({ received: true, type: normalized.providerEventType, skipped: true }), { status: 200 });
++					await stripeEventsStore(ctx).put(claim.id, {
++						...claim.record, processingState: response.ok ? "completed" :
++							(await isSafePartialItemRetry(ctx, normalized) ? "retryable" : "review_required"),
++					} as StripeEventRecord);
++					return response;
++				} catch (error) {
++					ctx.log.error("Webhook handler requires recovery", { providerId: provider.id });
++					try { await stripeEventsStore(ctx).put(claim.id, { ...claim.record,
++						processingState: await isSafePartialItemRetry(ctx, normalized) ? "retryable" : "review_required" } as StripeEventRecord); } catch {}
++					return new Response(JSON.stringify({ error: "Webhook handler requires recovery" }), { status: 503 });
+ 				}
+ 			}
+ 
+diff --git a/packages/core/test/payment-provider.test.ts b/packages/core/test/payment-provider.test.ts
+index f745c41..992e642 100644
+--- a/packages/core/test/payment-provider.test.ts
++++ b/packages/core/test/payment-provider.test.ts
+@@ -10,6 +10,7 @@ import { refundOrder } from "../src/orders/refund";
+ import {
+ 	type InitCheckoutInput,
+ 	createMockPaymentProvider,
++	loadPaymentProviderCredentials,
+ 	registerPaymentProvider,
+ 	requirePaymentProvider,
+ 	resetPaymentProviders,
+@@ -21,6 +22,9 @@ import {
+ 	withBillingShippingFallback,
+ } from "../src/payment-provider";
+ import { webhookRoutes } from "../src/routes/webhook";
++import { checkoutRoutes } from "../src/routes/checkout";
++import { activeCheckoutDraft, reserveCheckout, completeCheckoutReservation } from "../src/cart/checkout-reservation";
++import { adminApiRoutes } from "../src/routes/admin-api";
+ import { encodeStripeForm } from "../src/stripe/client";
+ import type { Address, CartState, Order } from "../src/types";
+ 
+@@ -451,6 +455,15 @@ describe("refund idempotency", () => {
+ });
+ 
+ describe("registerPaymentProvider", () => {
++	it('uses native adapter credentials without loading a provider API key into Core', async () => {
++		const provider = createMockPaymentProvider({ id: 'paystack' });
++		provider.getCredentials = async () => ({ secretKey: 'host-managed-paystack', webhookSecret: 'relay-secret' });
++		registerPaymentProvider(provider);
++		let reads = 0;
++		const credentials = await loadPaymentProviderCredentials({ get: async () => { reads++; return null; } }, 'paystack');
++		expect(credentials).toEqual({ secretKey: 'host-managed-paystack', webhookSecret: 'relay-secret' });
++		expect(reads).toBe(0);
++	});
+ 	it("throws on duplicate ids unless override is passed", () => {
+ 		expect(() => registerPaymentProvider(stripePaymentProvider)).toThrow(/already registered/);
+ 		const mock = createMockPaymentProvider({ id: "stripe" });
+@@ -807,6 +820,12 @@ function commerceCtx(opts?: { kv?: Record<string, unknown>; orders?: Map<string,
+ 	const refunds = new Map<string, unknown>();
+ 	return {
+ 		kv: {
++			getVersioned: async (k: string) => kv.has(k) ? { value: kv.get(k), revision: JSON.stringify(kv.get(k)) } : null,
++			compareAndSet: async (k: string, revision: string | null, value: unknown) => {
++				const current = kv.has(k) ? JSON.stringify(kv.get(k)) : null;
++				if (current !== revision) return { applied: false };
++				kv.set(k, value); return { applied: true, revision: JSON.stringify(value) };
++			},
+ 			get: async <T>(k: string) => (kv.get(k) as T | undefined) ?? null,
+ 			set: async (k: string, v: unknown) => {
+ 				kv.set(k, v);
+@@ -817,6 +836,11 @@ function commerceCtx(opts?: { kv?: Record<string, unknown>; orders?: Map<string,
+ 		},
+ 		storage: {
+ 			orders: {
++				getVersioned: async (id: string) => orders.has(id) ? { value: orders.get(id), revision: JSON.stringify(orders.get(id)) } : null,
++				compareAndSet: async (id: string, revision: string, value: Order) => {
++					if (JSON.stringify(orders.get(id)) !== revision) return { applied: false };
++					orders.set(id, value); return { applied: true, revision: JSON.stringify(value) };
++				},
+ 				get: async (id: string) => orders.get(id) ?? null,
+ 				put: async (id: string, data: Order) => {
+ 					orders.set(id, { ...data, id });
+@@ -975,3 +999,216 @@ describe("currency mismatch hold", () => {
+ 		expect(order.checkoutReference).toBe("cs_fx");
+ 	});
+ });
++
++describe('partial order recovery regression', () => {
++  it('repairs missing items after the first item write fails', async () => {
++    const ctx = commerceCtx();
++    let calls = 0;
++    const rows = new Map<string, unknown>();
++    (ctx.storage.order_items as any).putMany = async (items: Array<{ id: string; data: unknown }>) => {
++      if (++calls === 1) { rows.set(items[0]!.id, items[0]!.data); throw new Error('injected item write failure'); }
++      for (const item of items) rows.set(item.id, item.data);
++    };
++    (ctx.storage.order_items as any).query = async () => ({ items: [...rows].map(([id, data]) => ({ id, data })), hasMore: false });
++    const cart = baseCart('USD', 5000);
++    cart.items.push({ ...cart.items[0]!, lineId: 'li_2', productId: 'prod_2', title: 'Other item' });
++    const input = { paymentIntent: { id: 'pi_partial', amount: 5000, amount_received: 5000, currency: 'usd',
++      status: 'succeeded', receipt_email: 'ada@example.com', metadata: { orderDraftId: 'draft_partial' } },
++      cartSnapshot: cart, orderDraftId: 'draft_partial' };
++    await expect(createOrderFromPaymentIntent(ctx, input)).rejects.toThrow('injected item write failure');
++    expect(ctx._orders.size).toBe(1);
++    await expect(createOrderFromPaymentIntent(ctx, input)).rejects.toThrow('inventory requires manual review');
++    expect(rows.size).toBe(2);
++    expect([...ctx._orders.values()][0]?.status).toBe('on-hold');
++  });
++  it('does not repeat effects when prior execution may have changed inventory', async () => {
++    const ctx = commerceCtx();
++    const order = paidOrder({ id: 'ord_uncertain', stripePaymentIntentId: 'pi_uncertain', status: 'on-hold',
++      metadata: { orderDraftId: 'draft_uncertain', recoveryState: 'effects_started' } });
++    ctx._orders.set(order.id, order);
++    let writes = 0;
++    (ctx.storage.order_items as any).putMany = async () => { writes++; };
++    const input = { paymentIntent: { id: 'pi_uncertain', amount: 5000, amount_received: 5000, currency: 'usd',
++      status: 'succeeded', receipt_email: 'ada@example.com', metadata: { orderDraftId: 'draft_uncertain' } },
++      cartSnapshot: baseCart('USD', 5000), orderDraftId: 'draft_uncertain' };
++    await expect(createOrderFromPaymentIntent(ctx, input)).rejects.toThrow('require manual review');
++    expect(writes).toBe(0);
++    expect(ctx._orders.get(order.id)?.status).toBe('on-hold');
++  });
++});
++
++it('retries a known failed item stage and holds the repaired order without replaying stock', async () => {
++  registerPaymentProvider(createMockPaymentProvider({ id: 'paystack', omitGetPaymentStatus: true }));
++  const cart = baseCart('USD', 5000);
++  const ctx = commerceCtx({ kv: { 'settings:paystackSecretKey': 'secret', 'settings:paystackWebhookSecret': 'test-secret',
++    } });
++  const draftId = await reserveCheckout(ctx, cart, 'paystack');
++  await ctx.kv.set(`draft:${draftId}`, { cart });
++  const eventRows = new Map<string, any>();
++  const byEvent = new Map<string, string>();
++  (ctx.storage as any).stripe_events = {
++    put: async (id: string, row: any) => {
++      const prior = byEvent.get(row.stripeEventId);
++      if (prior && prior !== id) throw Object.assign(new Error('unique'), { code: 'UNIQUE' });
++      byEvent.set(row.stripeEventId, id); eventRows.set(id, row);
++    },
++    query: async ({ where }: any) => { const id = byEvent.get(where.stripeEventId); return { items: id ? [{ id, data: eventRows.get(id) }] : [], hasMore: false }; },
++    getVersioned: async (id: string) => eventRows.has(id) ? { value: eventRows.get(id), revision: JSON.stringify(eventRows.get(id)) } : null,
++    compareAndSet: async (id: string, rev: string, value: any) => {
++      if (JSON.stringify(eventRows.get(id)) !== rev) return { applied: false };
++      eventRows.set(id, value); return { applied: true, revision: JSON.stringify(value) };
++    },
++  };
++  let writes = 0;
++  const items = new Map<string, any>();
++  (ctx.storage.order_items as any).putMany = async (rows: Array<{id: string; data: unknown}>) => {
++    if (++writes === 1) throw new Error('injected write failure');
++    for (const row of rows) items.set(row.id, row.data);
++  };
++  (ctx.storage.order_items as any).query = async () => ({ items: [...items].map(([id, data]) => ({ id, data })), hasMore: false });
++  const makeRequest = (amount = 5000) => ({ input: {}, request: new Request('https://shop.example/checkout/webhook', { method: 'POST',
++    headers: { 'x-paystack-signature': 'test' }, body: JSON.stringify({ id: 'event_recovery', type: 'charge.succeeded',
++      orderDraftId: draftId, paymentReference: 'ref_recovery', amount, currency: 'USD', email: 'ada@example.com' }) }) }) as unknown as RouteContext;
++  const first = await webhookRoutes['checkout/webhook'].handler(makeRequest(), ctx) as Response;
++  expect(first.status).toBeGreaterThanOrEqual(500);
++  expect([...eventRows.values()][0].processingState).toBe('retryable');
++  expect([...ctx._orders.values()][0]?.metadata?.recoveryState).toBe('items_pending');
++  const second = await webhookRoutes['checkout/webhook'].handler(makeRequest(), ctx) as Response;
++  expect(second.status).toBeGreaterThanOrEqual(500);
++  expect(items.size).toBe(1);
++  expect([...ctx._orders.values()][0]?.metadata?.recoveryState).toBe('items_repaired_inventory_review_required');
++  expect([...ctx._orders.values()][0]?.status).toBe('on-hold');
++  expect([...eventRows.values()][0].processingState).toBe('review_required');
++  const held = [...ctx._orders.values()][0]!;
++  const recovery = { request: new Request(`https://shop.example/admin/orders/recovery?id=${held.id}`, { method: 'POST' }),
++    input: { expectedRevision: JSON.stringify(held), confirmed: true, reason: 'Payment and stock reviewed manually' },
++    user: { id: 'admin_1' } } as unknown as RouteContext;
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(recovery, ctx) as Response).status).toBe(200);
++  const mismatched = await webhookRoutes['checkout/webhook'].handler(makeRequest(4999), ctx) as Response;
++  expect(mismatched.status).toBe(409);
++  expect([...eventRows.values()][0].processingState).toBe('review_required');
++  const third = await webhookRoutes['checkout/webhook'].handler(makeRequest(), ctx) as Response;
++  expect(third.status).toBe(200);
++  expect([...eventRows.values()][0].processingState).toBe('completed');
++  expect(items.size).toBe(1);
++});
++
++
++it('does not permit status changes while order recovery is unresolved', async () => {
++  const order = paidOrder({ status: 'on-hold', metadata: { orderDraftId: 'draft_1', recoveryState: 'effects_started' } });
++  const ctx = commerceCtx({ orders: new Map([[order.id, order]]) });
++  const route = { request: new Request('https://shop.example/admin/orders/status?id=ord_1', { method: 'POST' }),
++    input: { status: 'processing' } } as unknown as RouteContext;
++  const response = await adminApiRoutes['admin/orders/status'].handler(route, ctx) as Response;
++  expect(response.status).toBe(409);
++  expect(ctx._orders.get(order.id)?.status).toBe('on-hold');
++});
++
++
++it('requires an authenticated revision-matched operator to resolve recovery without releasing the order', async () => {
++  const order = paidOrder({ status: 'on-hold', metadata: { orderDraftId: 'draft_1', recoveryState: 'items_repaired_inventory_review_required', recoveryItemCount: 1 } });
++  const ctx = commerceCtx({ orders: new Map([[order.id, order]]) });
++  (ctx.storage.order_items as any).query = async () => ({ items: [{ id: 'item_1', data: { orderId: order.id } }], hasMore: false });
++  const revision = JSON.stringify(order);
++  const route = (user: unknown, rev = revision) => ({ request: new Request('https://shop.example/admin/orders/recovery?id=ord_1', { method: 'POST' }),
++    input: { expectedRevision: rev, confirmed: true, reason: 'Inventory and fulfilment reconciled manually' }, user }) as unknown as RouteContext;
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(route(undefined), ctx) as Response).status).toBe(403);
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(route({ id: 'admin_1' }, 'stale'), ctx) as Response).status).toBe(409);
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(route({ id: 'admin_1' }), ctx) as Response).status).toBe(200);
++  expect(ctx._orders.get(order.id)).toMatchObject({ status: 'on-hold', metadata: { recoveryState: 'operator_reconciled', recoveryReviewer: 'admin_1' } });
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(route({ id: 'admin_1' }), ctx) as Response).status).toBe(409);
++});
++
++
++it('refuses a recovery confirmation when the item set is incomplete or effects may still be running', async () => {
++  const order = paidOrder({ status: 'on-hold', metadata: { orderDraftId: 'draft_1', recoveryState: 'effects_started', recoveryItemCount: 1 } });
++  const ctx = commerceCtx({ orders: new Map([[order.id, order]]) });
++  const makeRoute = () => ({ request: new Request('https://shop.example/admin/orders/recovery?id=ord_1', { method: 'POST' }),
++    input: { expectedRevision: JSON.stringify(ctx._orders.get(order.id)), confirmed: true, reason: 'Payment and inventory checked manually' }, user: { id: 'admin_1' } }) as unknown as RouteContext;
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(makeRoute(), ctx) as Response).status).toBe(409);
++  ctx._orders.set(order.id, { ...order, metadata: { ...order.metadata, recoveryState: 'items_repaired_inventory_review_required' } });
++  expect((await adminApiRoutes['admin/orders/recovery'].handler(makeRoute(), ctx) as Response).status).toBe(409);
++  expect(ctx._orders.get(order.id)?.status).toBe('on-hold');
++});
++
++
++it('reuses one checkout draft after a provider timeout', async () => {
++  const cart = baseCart('USD', 5000); cart.items[0]!.isDigital = true;
++  const ctx = commerceCtx({ kv: { 'cart:sess_1': cart, 'settings:paymentProvider': 'paystack',
++    'settings:checkoutMode': 'hosted', 'settings:paystackSecretKey': 'test-secret' } });
++  (ctx as any).content = { get: async () => ({ id: 'prod_1', status: 'published', data: { title: 'Mug',
++    prices: { USD: { amount: 5000 } }, is_virtual: true, manage_stock: false } }) };
++  const ids: string[] = [];
++  const addresses: unknown[] = [];
++  const provider = createMockPaymentProvider({ id: 'paystack', supportedCurrencies: ['USD'] });
++  provider.initCheckout = async (_ctx, input) => { ids.push(input.orderDraftId); addresses.push(input.billingAddress, input.shippingAddress); throw new Error('provider timeout'); };
++  registerPaymentProvider(provider);
++  const request = () => ({ request: new Request('https://shop.example/checkout/create-session', { method: 'POST',
++    headers: { cookie: 'dashcommerce_sid=sess_1' } }), input: {} }) as unknown as RouteContext;
++  await ctx.kv.set('settings:taxMode', 'stripe_tax');
++  const unsupported = await checkoutRoutes['checkout/create-session'].handler(request(), ctx) as Response;
++  expect(unsupported.status).toBe(409);
++  expect(await activeCheckoutDraft(ctx, cart.sessionId)).toBeNull();
++  expect(ids).toHaveLength(0);
++  await ctx.kv.set('settings:taxMode', 'flat');
++  await expect(checkoutRoutes['checkout/create-session'].handler(request(), ctx)).rejects.toThrow('provider timeout');
++  await expect(checkoutRoutes['checkout/create-session'].handler(request(), ctx)).rejects.toThrow('provider timeout');
++  expect(ids).toHaveLength(2);
++  expect(ids[0]).toBe(ids[1]);
++  expect(addresses[0]).toEqual(cart.billingAddress);
++  expect(addresses[1]).toEqual(cart.shippingAddress);
++  provider.initCheckout = async () => ({ kind: 'pending', checkoutReference: 'intent_pending' });
++  const pending = await checkoutRoutes['checkout/create-session'].handler(request(), ctx) as Response;
++  expect(pending.status).toBe(202);
++  expect(await pending.json()).toMatchObject({ pending: true, orderDraftId: ids[0] });
++});
++
++
++it('serializes checkout reservation, rejects cart changes until completion, and permits a new purchase after completion', async () => {
++  const cart = baseCart('USD', 5000), ctx = commerceCtx();
++  const [first, concurrent] = await Promise.all([reserveCheckout(ctx, cart, 'paystack'), reserveCheckout(ctx, cart, 'paystack')]);
++  expect(first).toBe(concurrent);
++  const changed = { ...cart, total: money('USD', 6000) };
++  await expect(reserveCheckout(ctx, changed, 'paystack')).rejects.toThrow('unresolved');
++  await expect(completeCheckoutReservation(ctx, cart.sessionId, 'wrong_draft')).rejects.toThrow('mismatch');
++  await completeCheckoutReservation(ctx, cart.sessionId, first);
++  await completeCheckoutReservation(ctx, cart.sessionId, first);
++  expect(await reserveCheckout(ctx, changed, 'paystack')).not.toBe(first);
++});
++
++it('completes a checkout reservation only after the paid order is durably created', async () => {
++  registerPaymentProvider(createMockPaymentProvider({ id: 'paystack', omitGetPaymentStatus: true }));
++  const cart = baseCart('USD', 5000);
++  const ctx = commerceCtx({ kv: { 'settings:paystackSecretKey': 'secret', 'settings:paystackWebhookSecret': 'test-secret' } });
++  const draftId = await reserveCheckout(ctx, cart, 'paystack');
++  await ctx.kv.set(`draft:${draftId}`, { cart });
++  const events = new Map<string, any>(), index = new Map<string, string>();
++  (ctx.storage as any).stripe_events = {
++    put: async (id: string, row: any) => { const prior = index.get(row.stripeEventId); if (prior && prior !== id) throw Object.assign(new Error('unique'), { code: 'UNIQUE' }); index.set(row.stripeEventId, id); events.set(id, row); },
++    query: async ({ where }: any) => { const id = index.get(where.stripeEventId); return { items: id ? [{ id, data: events.get(id) }] : [], hasMore: false }; },
++  };
++  const make = (id = 'event_success', amount = 5000, draft = draftId) => ({ input: {}, request: new Request('https://shop.example/checkout/webhook', { method: 'POST',
++    headers: { 'x-paystack-signature': 'test' }, body: JSON.stringify({ id, type: 'charge.succeeded',
++      orderDraftId: draft, paymentReference: 'ref_success', amount, currency: 'USD', email: 'ada@example.com' }) }) }) as unknown as RouteContext;
++  expect((await webhookRoutes['checkout/webhook'].handler(make(), ctx) as Response).status).toBe(200);
++  expect((await webhookRoutes['checkout/webhook'].handler(make('event_success', 5001), ctx) as Response).status).toBe(409);
++  expect((await webhookRoutes['checkout/webhook'].handler(make('event_wrong_amount', 5001), ctx) as Response).status).toBe(409);
++  expect((await webhookRoutes['checkout/webhook'].handler(make('event_wrong_draft', 5000, 'wrong_draft'), ctx) as Response).status).toBe(409);
++  expect([...ctx._orders.values()][0]).toMatchObject({ paymentStatus: 'paid', metadata: { recoveryState: 'complete' } });
++  expect((await webhookRoutes['checkout/webhook'].handler(make(), ctx) as Response).status).toBe(200);
++  expect(await reserveCheckout(ctx, { ...cart, total: money('USD', 6000) }, 'paystack')).not.toBe(draftId);
++});
++
++it('claims the payment before customer writes across distinct concurrent events', async () => {
++  const ctx = commerceCtx(); let customerWrites = 0;
++  const original = ctx.storage.customers.put;
++  ctx.storage.customers.put = async (id: string, data: any) => { customerWrites++; return original(id, data); };
++  const input = { paymentIntent: { id: 'shared_payment', amount: 5000, amount_received: 5000, currency: 'usd',
++    status: 'succeeded', receipt_email: 'ada@example.com', metadata: { orderDraftId: 'draft_claim', providerId: 'paystack' } },
++    cartSnapshot: baseCart('USD', 5000), orderDraftId: 'draft_claim' };
++  const outcomes = await Promise.allSettled([createOrderFromPaymentIntent(ctx, input), createOrderFromPaymentIntent(ctx, input)]);
++  expect(outcomes.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
++  expect(customerWrites).toBe(1);
++  expect(ctx._orders.size).toBe(1);
++});
++
+diff --git a/packages/core/src/cart/checkout-reservation.ts b/packages/core/src/cart/checkout-reservation.ts
+new file mode 100644
+index 0000000..ebab23f
+--- /dev/null
++++ b/packages/core/src/cart/checkout-reservation.ts
+@@ -0,0 +1,60 @@
++/** One durable checkout identity per session while a non-Stripe payment is unresolved. */
++import type { PluginContext } from 'emdash';
++import type { CartState } from '../types';
++import { randomId } from '../util/ids';
++
++interface Reservation { version: 1; state: 'active' | 'completed'; orderDraftId: string; fingerprint: string; }
++const isReservation = (v: unknown): v is Reservation => {
++  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
++  const r = v as Record<string, unknown>;
++  return r.version === 1 && (r.state === 'active' || r.state === 'completed') &&
++    typeof r.orderDraftId === 'string' && /^[a-f0-9]{32}$/u.test(r.orderDraftId) &&
++    typeof r.fingerprint === 'string' && /^[a-f0-9]{64}$/u.test(r.fingerprint);
++};
++async function hash(value: string): Promise<string> {
++  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
++  return [...bytes].map((v) => v.toString(16).padStart(2, '0')).join('');
++}
++function canonical(value: unknown): string {
++  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
++  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
++  const v = value as Record<string, unknown>;
++  return `{${Object.keys(v).filter((key) => v[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(v[key])}`).join(',')}}`;
++}
++async function key(sessionId: string): Promise<string> { return `checkout-reservation:${await hash(sessionId)}`; }
++async function fingerprint(cart: CartState, providerId: string): Promise<string> {
++  const { createdAt: _created, updatedAt: _updated, ...stable } = cart;
++  return hash(canonical({ providerId, cart: stable }));
++}
++export async function activeCheckoutDraft(ctx: PluginContext, sessionId: string): Promise<string | null> {
++  const row = await ctx.kv.getVersioned(await key(sessionId));
++  if (!row) return null;
++  if (!isReservation(row.value)) throw new Error('Checkout reservation is invalid');
++  return row.value.state === 'active' ? row.value.orderDraftId : null;
++}
++export async function reserveCheckout(ctx: PluginContext, cart: CartState, providerId: string): Promise<string> {
++  if (!cart.sessionId || !providerId || typeof ctx.kv.getVersioned !== 'function' || typeof ctx.kv.compareAndSet !== 'function') {
++    throw new Error('Checkout reservation unavailable');
++  }
++  const storageKey = await key(cart.sessionId), digest = await fingerprint(cart, providerId);
++  const existing = await ctx.kv.getVersioned(storageKey);
++  if (existing && !isReservation(existing.value)) throw new Error('Checkout reservation is invalid');
++  if (existing && isReservation(existing.value) && existing.value.state === 'active') {
++    if (existing.value.fingerprint !== digest) throw new Error('A previous checkout is still unresolved');
++    return existing.value.orderDraftId;
++  }
++  const record: Reservation = { version: 1, state: 'active', orderDraftId: randomId(), fingerprint: digest };
++  const written = await ctx.kv.compareAndSet(storageKey, existing?.revision ?? null, record);
++  if (written.applied) return record.orderDraftId;
++  const winner = await ctx.kv.getVersioned(storageKey);
++  if (winner && isReservation(winner.value) && winner.value.state === 'active' && winner.value.fingerprint === digest) return winner.value.orderDraftId;
++  throw new Error('Checkout reservation changed; retry safely');
++}
++export async function completeCheckoutReservation(ctx: PluginContext, sessionId: string, draftId: string): Promise<void> {
++  const storageKey = await key(sessionId), row = await ctx.kv.getVersioned(storageKey);
++  if (!row || !isReservation(row.value) || row.value.orderDraftId !== draftId) throw new Error('Checkout reservation mismatch');
++  if (row.value.state === 'completed') return;
++  if (!(await ctx.kv.compareAndSet(storageKey, row.revision, { ...row.value, state: 'completed' })).applied) {
++    throw new Error('Checkout reservation completion conflict');
++  }
++}
+diff --git a/packages/core/test/paystack-webhook-retry.regression.test.ts b/packages/core/test/paystack-webhook-retry.regression.test.ts
+new file mode 100644
+index 0000000..004e470
+--- /dev/null
++++ b/packages/core/test/paystack-webhook-retry.regression.test.ts
+@@ -0,0 +1,30 @@
++import { afterEach, expect, it } from 'bun:test';
++import type { PluginContext, RouteContext } from 'emdash';
++import { createMockPaymentProvider, registerPaymentProvider, resetPaymentProviders } from '../src/payment-provider';
++import { webhookRoutes } from '../src/routes/webhook';
++
++afterEach(() => resetPaymentProviders());
++it('does not acknowledge a retried payment when prior processing failed', async () => {
++  registerPaymentProvider(createMockPaymentProvider({ id: 'paystack', omitGetPaymentStatus: true }));
++  const events = new Map<string, { id: string; stripeEventId: string; processingState?: string }>();
++  const ctx = {
++    kv: { get: async (k: string) => k === 'settings:paystackSecretKey' ? 'secret' :
++      k === 'settings:paystackWebhookSecret' ? 'test-secret' : null },
++    storage: { orders: { query: async () => ({ items: [], hasMore: false }) }, stripe_events: {
++      put: async (id: string, row: { id: string; stripeEventId: string; processingState?: string }) => {
++        const old = events.get(row.stripeEventId);
++        if (old && old.id !== id) throw Object.assign(new Error('duplicate'), { code: 'UNIQUE' });
++        events.set(row.stripeEventId, row);
++      },
++      query: async ({where}: {where: {stripeEventId: string}}) => { const row = events.get(where.stripeEventId); return {items: row ? [{id: row.id, data: row}] : [], hasMore: false}; },
++    } }, log: { info() {}, warn() {}, error() {}, debug() {} }, site: { url: 'https://shop.example', name: 'Shop' },
++  } as unknown as PluginContext;
++  const makeRequest = () => ({ input: {}, request: new Request('https://shop.example/checkout/webhook', {
++    method: 'POST', headers: { 'x-paystack-signature': 'test' }, body: JSON.stringify({ id: 'paystack_event_1',
++      type: 'charge.succeeded', orderDraftId: 'missing_draft', paymentReference: 'paystack_ref' }),
++  }) }) as unknown as RouteContext;
++  const first = await webhookRoutes['checkout/webhook'].handler(makeRequest(), ctx) as Response;
++  const retry = await webhookRoutes['checkout/webhook'].handler(makeRequest(), ctx) as Response;
++  expect(first.status).toBe(500);
++  expect(retry.status).toBeGreaterThanOrEqual(500);
++});

@@ -1,0 +1,59 @@
+{
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+	"slug": "paystack-host-probe",
+	"name": "Disposable Paystack Host Fixture",
+	"description": "Local-only host fixture for Paystack plugin configuration and boundaries.",
+	"version": "0.0.0",
+	"license": "MIT",
+	"publisher": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+	"author": { "name": "Local Test Fixture" },
+	"security": { "url": "https://example.invalid/security" },
+	"repo": "https://example.invalid/paystack-host-probe",
+	"capabilities": ["network:request"],
+	"allowedHosts": ["api.paystack.co"],
+	"storage": {
+		"wallets": { "indexes": [["siteIdHash", "updatedAt"]], "uniqueIndexes": [["siteIdHash", "subjectIdHash", "currency"]] },
+		"wallet_accounts": { "indexes": [["profileId", "environment", "providerCustomerCode"]], "uniqueIndexes": [["siteIdHash", "subjectIdHash", "profileId", "environment"]] },
+		"wallet_operations": { "indexes": [["walletId", "createdAt"], ["siteIdHash", "state", "createdAt"]], "uniqueIndexes": [["siteIdHash", "requestKeyHash"]] },
+		"wallet_transactions": { "indexes": [["walletId", "createdAt"], ["walletId", "kind", "createdAt"]], "uniqueIndexes": ["operationId"] },
+		"profiles": {
+			"indexes": [["merchantId", "environment"], "operationalState", "credentialVersion"],
+			"uniqueIndexes": [["merchantId", "environment", "profileId"]],
+		},
+		"forms": { "indexes": [["state", "updatedAt"], "updatedAt"] },
+		"intents": {
+			"indexes": [
+				["siteId", "createdAt"],
+				["merchantId", "environment", "createdAt"],
+				["state", "nextRunAt"],
+				["deliveryState", "verifiedAt"],
+				["consumerId", "deliveryState", "verifiedAt"],
+				["siteId", "consumerId", "deliveryState", "verifiedAt"],
+				"resultEventId",
+				["formId", "createdAt"],
+				"purgeAt",
+			],
+		},
+		"request_keys": { "indexes": [["intentId", "createdAt"]], "uniqueIndexes": ["scopeKey"] },
+		"inbox": {
+			"indexes": [["state", "dueAt"], ["profileId", "acceptedAt"], ["intentId", "acceptedAt"], "purgeAt"],
+		},
+		"customers": { "indexes": [["profileId", "updatedAt"], "purgeAt"] },
+		"nonces": { "indexes": ["expiresAt"] },
+		"budgets": { "indexes": ["expiresAt"] },
+		"probe": { "indexes": ["state"] },
+	},
+	"admin": {
+		"settingsSchema": {
+			"paymentConfiguration": {
+				"label": "Payment configuration",
+				"description": "Encrypted JSON-string configuration. Values are written only through revision-guarded plugin routes.",
+				"type": "secret",
+			},
+		},
+		"pages": [
+			{ "path": "/setup", "label": "Setup", "icon": "settings" },
+			{ "path": "/recovery", "label": "Recovery", "icon": "refresh-cw" },
+		],
+	},
+}

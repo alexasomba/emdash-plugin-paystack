@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "rootDir": ".",
+    "outDir": "dist/dashcommerce"
+  },
+  "include": [
+    "integrations/dashcommerce/index.ts"
+  ]
+}

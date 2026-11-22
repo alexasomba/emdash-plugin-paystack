@@ -1,0 +1,132 @@
+---
+import type { PublicFormProjection } from '../../../src/domain/projection.js';
+import { parseNgnAmount } from '../../../src/domain/money.js';
+import type { PublicFormPricing } from './client.js';
+
+type PageState = 'ready' | 'loading' | 'empty' | 'denied' | 'error' | 'partial';
+interface Props {
+	projection?: PublicFormProjection;
+	state?: PageState;
+	/** Same-origin endpoints owned by this consuming site, never the sandbox runtime. */
+	submitEndpoint: string;
+	actionEndpoint: string;
+	statusEndpoint: string;
+	csrfToken: string;
+	/** Display-only amount resolved by the site's server for this authorized order. */
+	trustedOrderDisplay?: string;
+}
+
+const { projection, state = projection ? 'ready' : 'empty', submitEndpoint, actionEndpoint, statusEndpoint, csrfToken, trustedOrderDisplay } = Astro.props;
+const pricing: PublicFormPricing | undefined = state === 'ready' && projection ? projection.pricing : undefined;
+const fixedAmount = pricing?.mode === 'fixed' ? parseNgnAmount(pricing.amount) : null;
+const enterMinimum = pricing?.mode === 'payer_entered' ? parseNgnAmount(pricing.minimum) : null;
+const enterMaximum = pricing?.mode === 'payer_entered' ? parseNgnAmount(pricing.maximum) : null;
+const pricingValid = pricing?.mode === 'fixed'
+	? fixedAmount?.ok === true
+	: pricing?.mode === 'payer_entered'
+		? enterMinimum?.ok === true && enterMaximum?.ok === true && enterMinimum.money.minorUnits <= enterMaximum.money.minorUnits
+		: pricing?.mode === 'trusted_order';
+const renderState: PageState = state === 'ready' && projection !== undefined && !pricingValid ? 'error' : state;
+const ready = renderState === 'ready' && projection !== undefined && pricingValid;
+const fixedPrice = fixedAmount?.ok ? formatNgn(fixedAmount.money.value) : null;
+const enterAmount = pricing?.mode === 'payer_entered' ? pricing : null;
+const orderMode = pricing?.mode === 'trusted_order';
+const safeOrderDisplay = orderMode && trustedOrderDisplay ? displayNgn(trustedOrderDisplay) : null;
+
+function formatNgn(value: string): string {
+	return `NGN ${value}`;
+}
+
+function displayNgn(value: string): string | null {
+	const parsed = parseNgnAmount(value);
+	return parsed.ok ? formatNgn(parsed.money.value) : null;
+}
+---
+
+<main class="payment-shell" data-payment-view>
+	{renderState === 'loading' ? (
+		<section class="notice" role="status" aria-live="polite"><h1>Loading payment form</h1><p>Please wait while the site loads the published form.</p></section>
+	) : renderState === 'denied' ? (
+		<section class="notice notice-error" role="alert"><h1>Payment form unavailable</h1><p>You do not have permission to view this payment form. Sign in or contact the site administrator.</p></section>
+	) : renderState === 'error' ? (
+		<section class="notice notice-error" role="alert"><h1>Payment form unavailable</h1><p>The published form could not be loaded. Your site can retry loading it.</p></section>
+	) : renderState === 'partial' ? (
+		<section class="notice notice-error" role="alert"><h1>Payment form needs attention</h1><p>The site could not load all required payment details. No payment can be submitted until the form is available.</p></section>
+	) : renderState === 'empty' || !ready ? (
+		<section class="notice" role="status"><h1>No payment form available</h1><p>This payment form is empty or no longer published.</p></section>
+	) : (
+		<section class="payment-card" aria-labelledby="payment-title">
+			<h1 id="payment-title">{projection.purpose}</h1>
+			<p class="subheading">Secure payment by Paystack · NGN</p>
+			{fixedPrice && <p class="price" aria-label={`Fixed price ${fixedPrice}`}>{fixedPrice}</p>}
+			{orderMode && <p class="price">{safeOrderDisplay ?? 'Order total confirmed securely by this site'}</p>}
+			<form
+				id="paystack-payment-form"
+				method="post"
+				novalidate
+				data-submit-endpoint={submitEndpoint}
+				data-action-endpoint={actionEndpoint}
+				data-status-endpoint={statusEndpoint}
+				data-csrf-token={csrfToken}
+				data-form-id={projection.id}
+				data-form-revision={projection.revision}
+				data-form-schema={projection.schemaVersion}
+				data-pricing-mode={pricing?.mode}
+				data-minimum={enterAmount?.minimum}
+				data-maximum={enterAmount?.maximum}
+			>
+				{projection.fields.map((field) => (
+					<div class="field">
+						<label for={`field-${field.id}`}>{field.label}{field.required && <span aria-hidden="true"> *</span>}</label>
+						{field.type === 'textarea' ? (
+							<textarea id={`field-${field.id}`} name={field.id} required={field.required} maxlength={field.maxLength ?? 2000} autocomplete="off" disabled></textarea>
+						) : field.type === 'select' ? (
+							<select id={`field-${field.id}`} name={field.id} required={field.required} disabled>
+								<option value="">Choose an option</option>
+								{field.options?.map((option) => <option value={option}>{option}</option>)}
+							</select>
+						) : field.type === 'checkbox' ? (
+							<input id={`field-${field.id}`} name={field.id} type="checkbox" required={field.required} disabled />
+						) : (
+							<input id={`field-${field.id}`} name={field.id} type={field.type} required={field.required} maxlength={field.maxLength ?? 2000} autocomplete={field.type === 'email' ? 'email' : 'off'} disabled />
+						)}
+					</div>
+				))}
+				{enterAmount && (
+					<div class="field">
+						<label for="payer-amount">Enter amount (NGN)</label>
+						<input id="payer-amount" name="payerAmount" type="text" inputmode="decimal" autocomplete="off" required aria-describedby="amount-help" disabled />
+						<p id="amount-help" class="hint">Enter between {formatNgn(enterAmount.minimum)} and {formatNgn(enterAmount.maximum)}, with up to two decimal places.</p>
+					</div>
+				)}
+				<p class="form-error" id="form-error" role="alert" tabindex="-1" hidden></p>
+				<button class="primary" type="submit" data-submit disabled>Continue to payment</button>
+				<p class="hint">If your browser allows session storage, this tab keeps submitted details for up to 30 minutes so the site can check the same payment after a connection problem. The draft is cleared when the site confirms a final outcome.</p>
+			</form>
+			<p id="payment-status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
+			<section id="recovery-panel" class="notice" aria-labelledby="recovery-title" hidden>
+				<h2 id="recovery-title">Payment outcome needs checking</h2>
+				<p id="recovery-copy">If session storage is available, your details and request key stay in this tab for up to 30 minutes. Checking again uses the same payment identity.</p>
+				<button class="secondary" type="button" data-reconcile disabled>Check existing payment</button>
+			</section>
+			<noscript><p class="notice">Enable JavaScript to submit this site-rendered payment form.</p></noscript>
+		</section>
+	)}
+</main>
+
+<style>
+	.payment-shell{max-width:42rem;margin:2rem auto;padding:0 1rem;color:var(--color-text,#1d252c);font:inherit;line-height:1.5}
+	.payment-card,.notice{padding:1.5rem;border:1px solid var(--color-border,#d8dee4);border-radius:.75rem;background:var(--color-surface,#fff)}
+	h1{font-size:1.7rem;line-height:1.2;margin:0 0 .5rem}.subheading,.hint{color:var(--color-text-secondary,#59636e)}
+	.price{font-size:1.25rem;font-weight:650;margin:1rem 0}.field{display:grid;gap:.4rem;margin:1.15rem 0}label{font-weight:600}
+	input,select,textarea,button{box-sizing:border-box;width:100%;min-height:44px;font:inherit;padding:.65rem .8rem;border:1px solid var(--color-border,#9aa4ad);border-radius:.45rem;background:var(--color-surface,#fff);color:inherit}
+	textarea{min-height:7rem;resize:vertical}input[type=checkbox]{width:1.25rem;min-height:44px;justify-self:start;accent-color:var(--color-brand,#0066cc)}
+	button{cursor:pointer;font-weight:600}.primary{background:var(--color-brand,#0066cc);border-color:var(--color-brand,#0066cc);color:var(--color-on-brand,#fff)}.secondary{max-width:20rem}
+	button:disabled{cursor:wait;opacity:.7}.status{min-height:1.5rem;margin:1rem 0}.form-error,.notice-error{color:#8b1d1d}.form-error:focus{outline:2px solid currentColor;outline-offset:3px}
+	[hidden]{display:none!important}:focus-visible{outline:3px solid var(--color-brand,#0066cc);outline-offset:3px}
+</style>
+
+<script>
+	import { attachPaymentForm } from './client.js';
+	attachPaymentForm(document.querySelector<HTMLFormElement>('#paystack-payment-form'));
+</script>

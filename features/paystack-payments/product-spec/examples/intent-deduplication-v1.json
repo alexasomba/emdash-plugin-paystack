@@ -1,0 +1,477 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "product-contract-acceptance-fixtures",
+  "notEndpointRequests": true,
+  "identity": {
+    "siteId": "site_verified_001",
+    "subject": {
+      "kind": "guest",
+      "id": "site_verified_guest_001"
+    },
+    "merchantAccount": "provider_account_test_001",
+    "environment": "test",
+    "businessReference": "site_intent_001"
+  },
+  "protectedFingerprint": "fp_original",
+  "cases": [
+    {
+      "case": "equal_new_key_created",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "created",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "created"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_initializing",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "initializing",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "initializing"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_requires_action",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "requires_action",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "requires_action"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_pending",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "pending",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "pending"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_unknown",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "unknown",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "unknown"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_review_required",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "review_required",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "review_required"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_verified_paid",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "verified_paid",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "verified_paid"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "equal_new_key_verified_failed",
+      "given": {
+        "intentId": "intent_001",
+        "attemptId": "attempt_001",
+        "state": "verified_failed",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "intentId": "intent_001",
+          "attemptId": "attempt_001",
+          "state": "verified_failed"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "changed_fingerprint_new_key",
+      "given": {
+        "intentId": "intent_001",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_changed"
+      },
+      "then": {
+        "code": "intent_conflict",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "changed_fingerprint_same_key",
+      "given": {
+        "requestKey": "stable_001",
+        "protectedFingerprint": "fp_original"
+      },
+      "when": {
+        "requestKey": "stable_001",
+        "protectedFingerprint": "fp_changed"
+      },
+      "then": {
+        "code": "request_key_conflict",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "concurrent_new_keys",
+      "given": {
+        "intentAbsent": true
+      },
+      "when": {
+        "concurrentRequestKeys": [
+          "stable_001",
+          "fresh_002"
+        ],
+        "sameIdentityAndFingerprint": true
+      },
+      "then": {
+        "code": {
+          "one": "new_attempt",
+          "other": "existing_intent",
+          "sameAttemptId": true
+        },
+        "newAttempts": 1,
+        "providerCreateCalls": 1
+      }
+    },
+    {
+      "case": "restart_claim_expiry",
+      "given": {
+        "attemptId": "attempt_001",
+        "state": "unknown",
+        "claimExpired": true,
+        "runtimeRestarted": true
+      },
+      "when": {
+        "requestKey": "fresh_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "attemptId": "attempt_001",
+          "state": "unknown"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "explicit_retry_denied_pending",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "state": "pending"
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "retry_not_allowed",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "explicit_retry_denied_unknown",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "state": "unknown"
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "retry_not_allowed",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "explicit_retry_denied_verified_paid",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "state": "verified_paid"
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "retry_not_allowed",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "explicit_retry_denied_review_required",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "state": "review_required"
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "retry_not_allowed",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "explicit_final_unsuccessful_retry",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "providerConfirmedFinalUnsuccessful": true
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "new_attempt",
+          "intentId": "intent_001",
+          "attemptId": "attempt_002"
+        },
+        "newAttempts": 1,
+        "providerCreateCalls": 1
+      }
+    },
+    {
+      "case": "concurrent_retry_keys",
+      "given": {
+        "attemptId": "attempt_001",
+        "latest": true,
+        "providerConfirmedFinalUnsuccessful": true
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "concurrentRequestKeys": [
+          "retry_002",
+          "retry_003"
+        ],
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "one": "new_attempt",
+          "other": "existing_intent",
+          "sameSuccessorAttemptId": true
+        },
+        "newAttempts": 1,
+        "providerCreateCalls": 1
+      }
+    },
+    {
+      "case": "retry_replay_after_successor",
+      "given": {
+        "predecessorAttemptId": "attempt_001",
+        "successorAttemptId": "attempt_002",
+        "successorState": "pending"
+      },
+      "when": {
+        "retryOfAttemptId": "attempt_001",
+        "requestKey": "retry_003",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": {
+          "outcome": "existing_intent",
+          "attemptId": "attempt_002",
+          "state": "pending"
+        },
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "distinct_authorized_payment",
+      "given": {
+        "priorIntentId": "intent_001",
+        "businessReference": "site_intent_001"
+      },
+      "when": {
+        "siteServerAuthorizedSeparatePayment": true,
+        "businessReference": "site_intent_002",
+        "requestKey": "variable_payment_002",
+        "samePayer": true
+      },
+      "then": {
+        "code": {
+          "outcome": "new_attempt",
+          "intentId": "intent_002",
+          "attemptId": "attempt_003"
+        },
+        "newAttempts": 1,
+        "providerCreateCalls": 1
+      }
+    },
+    {
+      "case": "same_retry_key_after_later_successor",
+      "given": {
+        "requestKey": "retry_002",
+        "boundAttemptId": "attempt_002",
+        "currentLatestAttemptId": "attempt_003"
+      },
+      "when": {
+        "requestKey": "retry_002",
+        "retryOfAttemptId": "attempt_001",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "existing_intent",
+        "attemptId": "attempt_002",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    },
+    {
+      "case": "retry_key_changed_predecessor",
+      "given": {
+        "requestKey": "retry_002",
+        "boundRetryOfAttemptId": "attempt_001"
+      },
+      "when": {
+        "requestKey": "retry_002",
+        "retryOfAttemptId": "attempt_002",
+        "protectedFingerprint": "fp_original"
+      },
+      "then": {
+        "code": "request_key_conflict",
+        "newAttempts": 0,
+        "providerCreateCalls": 0
+      }
+    }
+  ]
+}

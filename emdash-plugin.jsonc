@@ -1,0 +1,61 @@
+{
+	// User-approved publisher, author, license, repository, and security advisory metadata.
+	"$schema": "./node_modules/@emdash-cms/plugin-cli/schemas/emdash-plugin.schema.json",
+	"slug": "paystack-payments",
+	"name": "Paystack Payments",
+	"description": "Paystack hosted-card checkout and payment recovery for DashCommerce Core.",
+	"version": "0.1.1",
+	"license": "MIT",
+	"publisher": "did:plc:ldzgvxqlbij5imfwfhbsxyou",
+	"author": {
+		"name": "Alexander Asomba",
+		"url": "https://bsky.app/profile/alexasomba.bsky.social",
+	},
+	"security": {
+		"url": "https://github.com/alexasomba/emdash-plugin-paystack/security/advisories/new",
+	},
+	"repo": "https://github.com/alexasomba/emdash-plugin-paystack",
+	"capabilities": ["network:request"],
+	"allowedHosts": ["api.paystack.co"],
+	"storage": {
+		"profiles": {
+			"indexes": [["merchantId", "environment"], "operationalState", "credentialVersion"],
+			"uniqueIndexes": [["merchantId", "environment", "profileId"]],
+		},
+		"forms": { "indexes": [["state", "updatedAt"], "updatedAt"] },
+		"intents": {
+			"indexes": [
+				["siteId", "createdAt"],
+				["merchantId", "environment", "createdAt"],
+				["merchantId", "environment", "state", "createdAt"],
+				["state", "nextRunAt"],
+				["deliveryState", "verifiedAt"],
+				["consumerId", "deliveryState", "verifiedAt"],
+				["siteId", "consumerId", "deliveryState", "verifiedAt"],
+				"resultEventId",
+				["formId", "createdAt"],
+				"purgeAt",
+			],
+		},
+		"request_keys": { "indexes": [["intentId", "createdAt"]], "uniqueIndexes": ["scopeKey"] },
+		"inbox": {
+			"indexes": [["state", "dueAt"], ["profileId", "acceptedAt"], ["profileId", "state", "acceptedAt"], ["intentId", "acceptedAt"], "purgeAt"],
+		},
+		"customers": { "indexes": [["profileId", "updatedAt"], ["profileId", "createdAt"], ["profileId", "mappingState", "createdAt"], "purgeAt"] },
+		"nonces": { "indexes": ["expiresAt"] },
+		"budgets": { "indexes": ["expiresAt"] },
+	},
+	"admin": {
+		"settingsSchema": {
+			"paymentConfiguration": {
+				"label": "Payment configuration",
+				"description": "Encrypted JSON-string configuration. Values are written only through revision-guarded plugin routes.",
+				"type": "secret",
+			},
+		},
+		"pages": [
+			{ "path": "/setup", "label": "Setup", "icon": "settings" },
+			{ "path": "/recovery", "label": "Recovery", "icon": "refresh-cw" },
+		],
+	},
+}

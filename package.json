@@ -1,0 +1,62 @@
+{
+  "name": "emdash-plugin-paystack",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.10.0"
+  },
+  "packageManager": "pnpm@12.21.0",
+  "main": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    },
+    "./sandbox": "./dist/plugin.mjs",
+    "./dashcommerce": {
+      "import": "./dist/dashcommerce/integrations/dashcommerce/index.js",
+      "types": "./dist/dashcommerce/integrations/dashcommerce/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "emdash-plugin.jsonc",
+    "integrations/dashcommerce/core-recovery.patch",
+    "integrations/dashcommerce/README.md"
+  ],
+  "scripts": {
+    "build": "emdash-plugin build && pnpm run build:dashcommerce",
+    "check": "tsc --noEmit",
+    "test": "pnpm run test:unit && pnpm run test:host && pnpm run test:runtime",
+    "test:unit": "vp test run --passWithNoTests=false tests/support tests/unit tests/contract",
+    "test:e2e": "playwright test tests/e2e/admin.spec.ts",
+    "test:watch": "vp test --passWithNoTests=false tests/support tests/unit tests/contract",
+    "test:runtime": "vp test run --passWithNoTests=false --config tests/host/fixture/vitest.config.ts tests/runtime",
+    "test:host": "vp test run --passWithNoTests=false --config tests/host/fixture/vitest.config.ts tests/host && vp test run --passWithNoTests=false --config tests/host/fixtures/incompatible-bundle/vitest.config.ts",
+    "validate": "pnpm run check && pnpm run test",
+    "build:dashcommerce": "tsc -p tsconfig.dashcommerce.json",
+    "prepare": "vp config"
+  },
+  "peerDependencies": {
+    "emdash": "1.5.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@emdash-cms/cloudflare": "1.5.0",
+    "@emdash-cms/plugin-cli": "0.13.6",
+    "@emdash-cms/plugin-test": "0.2.12",
+    "@emdash-cms/plugin-types": "0.6.1",
+    "@playwright/test": "^1.65.1",
+    "emdash": "1.5.0",
+    "typescript": "7.0.2",
+    "vite": "catalog:",
+    "vitest": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexasomba/emdash-plugin-paystack.git"
+  }
+}

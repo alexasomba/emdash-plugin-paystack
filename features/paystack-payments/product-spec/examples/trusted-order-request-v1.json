@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "subject": {
+    "kind": "member",
+    "id": "site_verified_member_001"
+  },
+  "businessReference": "site_order_001",
+  "merchantProfile": "configured_test_profile",
+  "resolvedOrderPrice": {
+    "currency": "NGN",
+    "value": "5000.00"
+  },
+  "submission": {
+    "schemaVersion": "1.0",
+    "formId": "example_order",
+    "formRevision": "1",
+    "requestKey": "example_stable_order_submission_001",
+    "fields": {
+      "payer_email": "payer@example.test"
+    },
+    "metadata": {
+      "site.campaign": "example_launch"
+    }
+  },
+  "siteId": "site_verified_001"
+}

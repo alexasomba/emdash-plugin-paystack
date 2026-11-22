@@ -1,0 +1,119 @@
+{
+  "description": "Negative pricing fixtures; request is a browser submission, expected is a product-contract assertion, not provider proof.",
+  "schemaVersion": "1.0",
+  "cases": [
+    {
+      "name": "fixed_amount_override",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_variable_payment",
+        "formRevision": "1",
+        "requestKey": "example_rejected_fixed_amount_override",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "amount": "5000.00"
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    },
+    {
+      "name": "fixed_payer_amount",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_variable_payment",
+        "formRevision": "1",
+        "requestKey": "example_rejected_fixed_payer_amount",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "payerAmount": "5000.00"
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    },
+    {
+      "name": "order_payer_amount",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_order",
+        "formRevision": "1",
+        "requestKey": "example_rejected_order_payer_amount",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "payerAmount": "5000.00"
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    },
+    {
+      "name": "order_browser_resolved_price",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_order",
+        "formRevision": "1",
+        "requestKey": "example_rejected_order_browser_resolved_price",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "resolvedOrderPrice": {
+          "currency": "NGN",
+          "value": "5000.00"
+        }
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    },
+    {
+      "name": "payer_entered_currency_override",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_variable_payment",
+        "formRevision": "1",
+        "requestKey": "example_rejected_payer_entered_currency_override",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "payerAmount": "2500.00",
+        "currency": "NGN"
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    },
+    {
+      "name": "payer_entered_policy_override",
+      "request": {
+        "schemaVersion": "1.0",
+        "formId": "example_variable_payment",
+        "formRevision": "1",
+        "requestKey": "example_rejected_payer_entered_policy_override",
+        "fields": {
+          "payer_email": "payer@example.test"
+        },
+        "payerAmount": "2500.00",
+        "pricingPolicy": "fixed"
+      },
+      "expected": {
+        "code": "protected_field_override",
+        "providerIoCalls": 0,
+        "providerCreations": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "specification-fixtures-not-endpoint-payload",
+  "acceptedProjections": {
+    "customers": {
+      "customerCorrelationId": "cc_01",
+      "subjectCorrelationId": "sc_01",
+      "providerCustomerCorrelationId": "pc_01",
+      "merchantProfileId": "mp_01",
+      "environment": "test",
+      "mappingState": "mapped",
+      "createdAt": "2026-10-17T12:00:00Z",
+      "updatedAt": "2026-10-17T12:00:00Z",
+      "maskedEmail": "p••••@••••"
+    },
+    "payments": {
+      "paymentId": "pay_01",
+      "intentId": "int_01",
+      "attemptId": "att_01",
+      "customerCorrelationId": "cc_01",
+      "merchantProfileId": "mp_01",
+      "environment": "test",
+      "formId": "frm_01",
+      "formRevision": "1",
+      "expectedAmount": {
+        "currency": "NGN",
+        "value": "2500.00"
+      },
+      "moneyState": "verified_paid",
+      "attemptState": "succeeded",
+      "deliveryState": "pending",
+      "createdAt": "2026-10-17T12:00:00Z",
+      "updatedAt": "2026-10-17T12:01:00Z",
+      "verifiedAt": "2026-10-17T12:01:00Z"
+    },
+    "payment-detail": {
+      "paymentId": "pay_01",
+      "intentId": "int_01",
+      "attemptId": "att_01",
+      "customerCorrelationId": "cc_01",
+      "merchantProfileId": "mp_01",
+      "environment": "test",
+      "formId": "frm_01",
+      "formRevision": "1",
+      "expectedAmount": {
+        "currency": "NGN",
+        "value": "2500.00"
+      },
+      "moneyState": "verified_paid",
+      "attemptState": "succeeded",
+      "deliveryState": "pending",
+      "createdAt": "2026-10-17T12:00:00Z",
+      "updatedAt": "2026-10-17T12:01:00Z",
+      "verifiedAt": "2026-10-17T12:01:00Z",
+      "providerResourceCorrelationId": "pr_01",
+      "providerReferenceCorrelationId": "rf_01",
+      "resultEventId": "res_01",
+      "providerAmount": {
+        "currency": "NGN",
+        "value": "2500.00"
+      },
+      "verificationState": "matched",
+      "maskedEmail": "p••••@••••",
+      "history": [
+        {
+          "attemptId": "att_01",
+          "state": "succeeded",
+          "occurredAt": "2026-10-17T12:01:00Z"
+        }
+      ]
+    },
+    "webhook-events": {
+      "eventId": "evt_01",
+      "paymentId": "pay_01",
+      "attemptId": "att_01",
+      "providerEventCorrelationId": "pe_01",
+      "merchantProfileId": "mp_01",
+      "environment": "test",
+      "authenticityState": "verified",
+      "processingState": "completed",
+      "receivedAt": "2026-10-17T12:00:30Z",
+      "processedAt": "2026-10-17T12:01:00Z"
+    }
+  },
+  "maskingCases": [
+    {
+      "input": "payer@example.test",
+      "expected": "p••••@••••"
+    },
+    {
+      "input": "M@example.test",
+      "expected": "m••••@••••"
+    },
+    {
+      "input": "+tag@example.test",
+      "expected": "•••••@••••"
+    },
+    {
+      "input": "",
+      "omitField": true
+    },
+    {
+      "input": null,
+      "omitField": true
+    },
+    {
+      "input": 14,
+      "omitField": true
+    },
+    {
+      "input": "payer@",
+      "omitField": true
+    },
+    {
+      "input": "@example.test",
+      "omitField": true
+    },
+    {
+      "input": " payer@example.test",
+      "omitField": true
+    },
+    {
+      "input": "payer@example.test ",
+      "omitField": true
+    },
+    {
+      "input": "a..b@example.test",
+      "omitField": true
+    },
+    {
+      "input": "a@-example.test",
+      "omitField": true
+    },
+    {
+      "input": "a@localhost",
+      "omitField": true
+    },
+    {
+      "input": "ü@example.test",
+      "omitField": true
+    },
+    {
+      "input": "a@exa_mple.test",
+      "omitField": true
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.test",
+      "omitField": true
+    }
+  ],
+  "negativeCases": [
+    {
+      "id": "reject-pii-and-payload-projection",
+      "input": {
+        "email": "payer@example.test",
+        "name": "Fictional Payer",
+        "phone": "+000000000",
+        "address": "Fictional street",
+        "subject": "payer@example.test",
+        "businessReference": "order-payer@example.test",
+        "metadata": {
+          "site.note": "private"
+        },
+        "fields": {
+          "message": "private"
+        },
+        "providerPayload": {
+          "secret": "fixture-secret"
+        },
+        "signature": "fixture-signature",
+        "credential": "fixture-credential"
+      },
+      "appliesTo": [
+        "customers",
+        "payments",
+        "payment-detail",
+        "webhook-events",
+        "ordinary-logs"
+      ],
+      "expected": "All input keys absent; only valid allowlisted fields independently constructed from trusted typed data may appear."
+    },
+    {
+      "id": "no-raw-error-or-nested-fallback",
+      "input": {
+        "providerError": "payer@example.test fixture-secret",
+        "history": [
+          {
+            "state": "payer@example.test",
+            "rawPayload": {
+              "email": "payer@example.test"
+            }
+          }
+        ],
+        "maskedEmail": "payer@example.test"
+      },
+      "expected": "Static safe error; unknown history state normalized to unknown; nested rawPayload absent; maskedEmail recomputed from validated source or omitted, never trusted/copied."
+    },
+    {
+      "id": "feed-is-distinct",
+      "inputContract": "API-result-feed",
+      "fixture": "verified-result-v1.json",
+      "expected": "Authorized versioned result preserves validated metadata and declared result fields; it is never emitted wholesale through admin inspection or ordinary logs."
+    }
+  ]
+}

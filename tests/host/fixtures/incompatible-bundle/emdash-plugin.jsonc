@@ -1,0 +1,12 @@
+{
+	"slug": "incompatible-sandbox-fixture",
+	"name": "Incompatible Sandbox Fixture",
+	"description": "Local negative fixture that must fail sandbox bundling.",
+	"version": "0.0.0",
+	"license": "MIT",
+	"publisher": "did:plc:aaaaaaaaaaaaaaaaaaaaaaaa",
+	"author": { "name": "Local Test Fixture" },
+	"security": { "url": "https://example.invalid/security" },
+	"capabilities": [],
+	"allowedHosts": []
+}

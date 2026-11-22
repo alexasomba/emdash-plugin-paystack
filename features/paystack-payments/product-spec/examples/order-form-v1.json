@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "id": "example_order",
+  "revision": "1",
+  "state": "published",
+  "name": "Example order payment",
+  "purpose": "Pay for an example service",
+  "fields": [
+    {
+      "id": "payer_email",
+      "type": "email",
+      "label": "Email address",
+      "required": true,
+      "maxLength": 254
+    },
+    {
+      "id": "message",
+      "type": "textarea",
+      "label": "Message",
+      "required": false,
+      "maxLength": 500
+    }
+  ],
+  "pricing": {
+    "mode": "trusted_order",
+    "currency": "NGN",
+    "resolution": "site_server"
+  },
+  "metadataPolicy": {
+    "allowedKeys": [
+      "site.campaign"
+    ],
+    "maxBytes": 4096
+  }
+}

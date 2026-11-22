@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "1.0",
+  "formId": "example_variable_payment",
+  "formRevision": "1",
+  "requestKey": "example_stable_submission_001",
+  "fields": {
+    "payer_email": "payer@example.test",
+    "message": "Example message"
+  },
+  "payerAmount": "2500.00",
+  "metadata": {
+    "site.service": "example_consultation"
+  }
+}

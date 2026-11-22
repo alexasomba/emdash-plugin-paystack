@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "example_verified_event_001",
+  "type": "payment.verified",
+  "paymentId": "example_payment_001",
+  "intentId": "site_intent_001",
+  "attemptId": "example_attempt_001",
+  "formId": "example_variable_payment",
+  "formRevision": "1",
+  "provider": "paystack",
+  "environment": "test",
+  "merchantProfile": "configured_test_profile",
+  "amount": {
+    "currency": "NGN",
+    "value": "2500.00"
+  },
+  "verifiedAt": "2026-10-17T12:00:00Z",
+  "metadata": {
+    "site.service": "example_consultation"
+  },
+  "providerResourceId": "example_provider_resource_001",
+  "providerReference": "example_reference_001"
+}
